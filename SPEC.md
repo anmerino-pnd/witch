@@ -1,106 +1,98 @@
-# Witch — Twitch VOD Custom HLS Player
 
-## 1. Project Overview
+# Witch — Phase 2: Twitch Live Playback
 
-### Project name
+## 1. Phase Overview
 
-`witch`
+This specification defines **Phase 2** of the Witch project.
 
-### Purpose
+Phase 1 has been completed successfully and provides functional Twitch VOD playback with:
 
-Witch is a small, local-first web application that allows a user to enter a Twitch VOD URL and watch that VOD inside Witch's own HTML5-based player.
+* Twitch VOD URL input.
+* Automatic VOD → HLS `.m3u8` resolution.
+* Custom HTML5/HLS video playback.
+* Configurable skip intervals.
+* Direct `HH:MM:SS` timestamp seeking.
+* Persistent skip interval settings using `localStorage`.
+* VOD-specific playback controls.
 
-The application must automatically resolve the Twitch VOD to a playable HLS `.m3u8` playlist using the most appropriate currently available technical approach. The user should not need to manually inspect Twitch's network requests or provide the `.m3u8` URL.
+**Phase 2 must add Twitch Live playback without breaking the existing VOD functionality.**
 
-The player must provide custom controls focused on fast navigation through long VODs, including configurable skip intervals and direct timestamp seeking.
+The primary goal of this phase is deliberately narrow:
 
-The project is intentionally small and should remain an MVP. It does not require accounts, a database, persistent server-side state, or a complex frontend framework.
+> Allow a user to enter a Twitch channel URL, detect whether the channel is currently live, resolve its HLS `.m3u8` playlist, and play the live stream inside Witch's existing player.
 
----
+Live playback should behave as a true live stream.
 
-## 2. Initial Project Setup
-
-The project must be initialized inside a directory named:
-
-```text
-witch/
-```
-
-Use `uv` for Python project management.
-
-The initial project should be equivalent to:
-
-```bash
-uv init --app --package --name witch --vcs none --description "A local-first Twitch VOD player with custom HLS navigation controls" --readme --author-from git --build-backend setuptools
-uv venv
-```
-
-If the exact `uv init` flags differ in the installed `uv` version, use the current supported equivalent while preserving these requirements:
-
-* Project name: `witch`
-* Application project
-* Packaged Python project
-* `setuptools` build backend
-* No automatic VCS initialization
-* A project description must exist
-* A `README.md` must exist
-* A virtual environment must be created
-* Python dependency management must use `uv`
-
-Do not add unnecessary project-management tooling.
+**Do not implement DVR, live seeking, rewind, timestamp navigation, or live playback history in this phase.**
 
 ---
 
-# 3. Product Goal
+# 2. Scope
 
-The core user flow must be:
+### In scope
 
-```text
-User
-  │
-  │ enters Twitch VOD URL
-  ▼
-Witch frontend
-  │
-  │ sends VOD URL to resolver
-  ▼
-Witch backend
-  │
-  │ resolves VOD playback information
-  ▼
-HLS .m3u8 playlist
-  │
-  ▼
-HTML5 video player
-  │
-  ├── configurable backward skip
-  ├── configurable forward skip
-  ├── timestamp selector
-  ├── play/pause
-  └── normal seeking
-```
+* Twitch channel URL input.
+* Live-channel detection.
+* Twitch Live → HLS `.m3u8` resolution.
+* Playback of the live HLS stream inside Witch.
+* Clear `LIVE` state in the UI.
+* Live-specific player controls.
+* Displaying the resolved `.m3u8` URL for debugging/transparency.
+* Copying the `.m3u8` URL to the clipboard.
+* Appropriate error handling.
+* Security validation.
+* Automated tests for the new backend logic where practical.
+* Documentation of the live-resolution approach and limitations.
 
-The user should only need to know the public Twitch VOD URL.
+### Out of scope
 
-Example input:
+Do NOT implement:
 
-```text
-https://www.twitch.tv/videos/2858768912
-```
+* Live DVR.
+* Rewind.
+* Fast-forward.
+* Timestamp seeking for live streams.
+* Live playback history.
+* Recording.
+* Downloading the live stream.
+* Chat integration.
+* Stream metadata dashboards.
+* Follower/subscriber functionality.
+* Twitch account authentication unless the selected resolution mechanism strictly requires it.
+* Database storage.
+* User accounts.
+* Analytics.
+* Telemetry.
+* Cloud infrastructure.
 
-The user must NOT be required to provide:
-
-```text
-https://.../index-dvr.m3u8
-```
+Keep the implementation small.
 
 ---
 
-# 4. Core Requirements
+# 3. Existing VOD Functionality Is Protected
 
-## FR-01 — Twitch VOD URL Input
+The VOD functionality from Phase 1 is considered stable.
 
-The application MUST provide a simple input where the user can paste a Twitch VOD URL.
+The Phase 2 implementation MUST NOT unnecessarily rewrite or replace working VOD code.
+
+Before modifying shared components:
+
+1. Inspect the existing VOD implementation.
+2. Understand its current architecture.
+3. Reuse existing abstractions where appropriate.
+4. Add live-specific behavior through clean extensions.
+5. Avoid breaking changes to VOD behavior.
+6. Run the existing VOD tests after implementing Live support.
+
+If a shared abstraction must be modified, preserve all existing VOD behavior.
+
+---
+
+# 4. Supported Input Types
+
+Witch should now support two primary Twitch URL types.
+
+## VOD
 
 Example:
 
@@ -108,278 +100,291 @@ Example:
 https://www.twitch.tv/videos/2858768912
 ```
 
-The UI must provide a clear action such as:
+This must continue using the existing Phase 1 VOD flow.
+
+## Channel
+
+Example:
 
 ```text
-Load VOD
+https://www.twitch.tv/ibai
 ```
 
-The application should validate that the input is plausibly a Twitch VOD URL before attempting resolution.
-
-At minimum, support URLs matching the Twitch VOD format:
-
-```text
-https://www.twitch.tv/videos/<vod-id>
-```
-
-The implementation may normalize common URL variations when appropriate.
-
----
-
-## FR-02 — Automatic VOD Resolution
-
-Witch MUST automatically resolve the supplied Twitch VOD URL to playable HLS information.
-
-The user must not manually provide an `.m3u8` URL.
-
-### Mandatory research requirement
-
-Before implementing the resolver, the coding agent MUST investigate the current Twitch VOD playback mechanism.
-
-The agent must research:
-
-1. How Twitch currently resolves VOD playback information.
-2. Whether Twitch exposes an official API or documented mechanism suitable for this purpose.
-3. Whether an official Twitch API can provide the required playback information.
-4. Whether obtaining the HLS playlist requires a Twitch client identifier, OAuth token, playback access token, GraphQL request, undocumented endpoint, or another mechanism.
-5. Whether the mechanism is suitable for a small local application.
-6. Browser CORS implications.
-7. Whether the resulting HLS URLs are temporary/expiring.
-8. Whether the approach works for VODs that are publicly accessible without requiring user authentication.
-9. Relevant Twitch terms, technical restrictions, and practical limitations.
-10. Whether the resolver should run in the backend rather than directly in the browser.
-
-Do not assume that a previously discovered CloudFront `.m3u8` URL is permanent or that Twitch's internal endpoints will remain stable.
-
-The agent must document the chosen approach and why it was selected.
-
-### Resolver constraints
-
-The resolver MUST:
-
-* Accept a Twitch VOD URL or VOD ID.
-* Resolve it to a playable HLS playlist or equivalent playback source.
-* Return useful errors when resolution fails.
-* Avoid exposing secrets to the frontend.
-* Avoid hardcoding a specific VOD.
-* Avoid hardcoding the `.m3u8` URL from the initial experiment.
-* Avoid relying on browser DevTools behavior.
-* Avoid scraping arbitrary Twitch pages if an appropriate official or technically superior mechanism exists.
-* Keep Twitch-specific resolution logic isolated from the player implementation.
-
-The exact resolver implementation is intentionally left to the agent after research.
-
----
-
-# 5. HLS Playback
-
-The VOD must be played inside Witch's own UI.
-
-Do NOT use the official Twitch embedded player as the primary player.
-
-The application should use an HTML5 `<video>` element.
-
-If native browser HLS support is insufficient, use an appropriate HLS JavaScript library such as `hls.js`.
-
-The agent must detect browser capabilities appropriately.
-
-The player implementation must be isolated from Twitch URL resolution.
+This should initiate the Phase 2 Live flow.
 
 Conceptually:
 
 ```text
+Twitch URL
+    │
+    ├── /videos/<id>
+    │       │
+    │       ▼
+    │      VOD
+    │       │
+    │       ▼
+    │  Existing VOD resolver
+    │
+    └── /<channel>
+            │
+            ▼
+          Channel
+            │
+            ▼
+        Is channel live?
+            │
+       ┌────┴────┐
+       │         │
+      YES        NO
+       │         │
+       ▼         ▼
+   Resolve      Clear
+    HLS        "Offline"
+       │
+       ▼
+    LIVE
+```
+
+---
+
+# 5. Live Detection
+
+The application must determine whether the supplied Twitch channel is currently live.
+
+The implementation should investigate the **official Twitch API first** for determining live status.
+
+The agent must research the current Twitch API capabilities and determine the appropriate endpoint/mechanism for checking whether a channel is live.
+
+Do not infer live status by blindly attempting to fetch arbitrary URLs if a proper API-based mechanism is available.
+
+The implementation should distinguish at least:
+
+```text
+LIVE
+OFFLINE
+ERROR
+```
+
+### Offline behavior
+
+If the channel exists but is not currently streaming, the UI should clearly communicate:
+
+```text
+This channel is currently offline.
+```
+
+It must not attempt to initialize the HLS player with an unavailable live playlist.
+
+---
+
+# 6. Live HLS Resolution
+
+Once a channel has been confirmed as live, Witch must resolve the stream into a playable HLS `.m3u8` playlist.
+
+The user must NOT need to manually provide the `.m3u8`.
+
+Example input:
+
+```text
+https://www.twitch.tv/ibai
+```
+
+Expected conceptual flow:
+
+```text
+Channel URL
+    ↓
+Channel identification
+    ↓
+Live status check
+    ↓
+Twitch playback resolution
+    ↓
+HLS .m3u8
+    ↓
+Witch player
+```
+
+---
+
+# 7. Mandatory Technical Research
+
+Before implementing the Live resolver, the coding agent MUST research the current Twitch playback architecture.
+
+Do not assume that the VOD resolver can simply be reused for Live.
+
+Investigate:
+
+1. How Twitch currently exposes live playback information.
+2. How the Twitch web player obtains the live HLS playlist.
+3. Whether the official Twitch API exposes the HLS playlist directly.
+4. Whether the official API can determine live status independently of playback resolution.
+5. Whether live playback requires:
+
+   * Client-ID.
+   * OAuth.
+   * access token.
+   * playback access token.
+   * GraphQL.
+   * another request mechanism.
+6. Whether the resulting HLS URL is temporary or signed.
+7. Required HTTP headers.
+8. CORS implications.
+9. Whether the HLS playlist can be consumed directly by the browser.
+10. Whether the resolver should run server-side.
+11. Whether the mechanism is documented, semi-documented, or internal.
+12. The stability implications of the chosen method.
+13. Relevant Twitch terms and technical restrictions.
+
+The agent must document the chosen approach and why it is appropriate for Witch.
+
+---
+
+# 8. Live Resolver Architecture
+
+The live resolver should be isolated from the existing VOD resolver.
+
+Prefer an architecture conceptually similar to:
+
+```text
 TwitchResolver
-      │
-      ▼
-HLS URL
-      │
-      ▼
-HLS Player Adapter
-      │
-      ▼
-HTMLVideoElement
+│
+├── VodResolver
+│
+└── LiveResolver
+       │
+       ├── Channel validation
+       ├── Live status
+       └── HLS resolution
 ```
 
-The player must expose enough state/control for the custom navigation UI.
+The exact implementation is up to the agent.
 
-At minimum:
-
-* Play
-* Pause
-* Current playback time
-* Total duration
-* Seek
-* Playback state
-* Loading state
-* Error state
+The important requirement is that Twitch-specific live resolution logic is not scattered throughout the UI or player code.
 
 ---
 
-# 6. Custom Skip Intervals
+# 9. HLS Source Exposure
 
-The application MUST support configurable skip intervals.
+For Phase 2, Witch should expose the resolved HLS `.m3u8` URL in the UI.
 
-Do not hardcode only:
-
-```text
--30s / +30s
-```
-
-Instead, the user should be able to define the intervals used by the navigation controls.
+This is intentionally included because the application is also being used as a technical experiment for understanding Twitch playback.
 
 Example:
 
 ```text
-Skip intervals
+HLS Source
 
-Backward:
-[ 5 ] [ 15 ] [ 30 ]
+https://usw21.playlist.ttvnw.net/v1/playlist/....m3u8
 
-Forward:
-[ 5 ] [ 15 ] [ 30 ]
-```
-
-The exact UI design is up to the agent, but it must remain simple.
-
-The resulting player could display:
-
-```text
-[-30s] [-15s] [-5s] [Play] [+5s] [+15s] [+30s]
-```
-
-### Behavior
-
-When a skip button is pressed:
-
-```text
-newTime = currentTime ± interval
-```
-
-The resulting time MUST be clamped to the valid video range:
-
-```text
-0 <= currentTime <= duration
-```
-
-Skipping backward from the beginning must never result in a negative timestamp.
-
-Skipping forward past the end must never exceed the duration.
-
----
-
-# 7. Timestamp Selector
-
-The player MUST provide a direct timestamp input mechanism.
-
-The purpose is to allow the user to jump to a specific point in a long VOD without having to precisely drag the seek bar.
-
-The UI should allow the user to enter:
-
-```text
-Hours : Minutes : Seconds
-```
-
-Example:
-
-```text
-[ 01 ] : [ 23 ] : [ 45 ]
-             [ Go ]
-```
-
-This must seek the player directly to:
-
-```text
-01:23:45
+[Copy]
 ```
 
 ### Requirements
 
-* Hours must be supported.
-* Minutes must be supported.
-* Seconds must be supported.
-* Input values must be validated.
-* Invalid timestamps must produce a clear UI error.
-* The target timestamp must not exceed the VOD duration.
-* Seeking to `00:00:00` must work.
-* Seeking to the exact duration must be handled safely.
-* Leading zeros should be accepted.
-* The implementation must not require the user to manually calculate total seconds.
+* The URL should be displayed only after successful resolution.
+* It should be visually secondary to the video.
+* It should be possible to copy it to the clipboard.
+* Long URLs must not break the layout.
+* The UI should handle URLs that expire.
+* The application should not claim that the URL is permanent.
 
-The timestamp selector may be implemented as separate fields or an equivalent accessible UI.
+A small indication may be shown:
+
+```text
+HLS source may expire.
+```
+
+Do not persist the live `.m3u8` URL in `localStorage`.
 
 ---
 
-# 8. Player Time Display
+# 10. Live Player Behavior
 
-The player must display the current playback position and total duration.
+When the source is a live stream, Witch must explicitly enter **Live Mode**.
 
 Example:
 
 ```text
-01:23:45 / 03:17:21
+🔴 LIVE
 ```
 
-The time display should be easy to interact with so that the timestamp selector feels like a natural extension of the player.
+The player should use the same underlying HTML5/HLS playback technology as appropriate for VODs, but Live Mode must expose a different control set.
 
-The implementation should avoid making users rely exclusively on the mouse pointer/seek bar for navigation.
+### Live controls
+
+The player should provide only controls appropriate for live playback.
+
+At minimum:
+
+* Play.
+* Pause, if technically supported by the implementation.
+* Live indicator.
+* Volume.
+* Fullscreen.
+* Standard browser/player controls as appropriate.
+
+The exact control design may reuse existing player infrastructure.
 
 ---
 
-# 9. Local Storage
+# 11. No Live Seeking
 
-User-defined skip intervals MUST persist using browser `localStorage`.
+This is an explicit Phase 2 requirement.
 
-Example conceptual storage:
+The Live player MUST NOT expose:
 
-```json
-{
-  "backward": [5, 15, 30],
-  "forward": [5, 15, 30]
-}
-```
+* Backward skip buttons.
+* Forward skip buttons.
+* Timestamp selector.
+* VOD-style seek bar.
+* "Go to timestamp" functionality.
+* Rewind controls.
+* Fast-forward controls.
 
-The exact storage schema is up to the implementation.
+Do not attempt to emulate DVR behavior.
 
-Requirements:
+The goal is simply:
 
-* Settings survive page reloads.
-* Settings are local to the browser.
-* No database is required.
-* No user account is required.
-* Corrupted or invalid localStorage values must not break the application.
-* The application should fall back to sensible defaults when settings are missing or invalid.
-
-The VOD itself does NOT need to be stored.
-
-Do not persist playback history.
+> Watch the current live stream.
 
 ---
 
-# 10. UI Requirements
+# 12. Live Edge Behavior
 
-The UI should be intentionally simple.
+The player should behave as a live player rather than as a VOD.
 
-No frontend framework is required.
+The implementation should investigate how the selected HLS library handles live playlists and the live edge.
 
-Preferred frontend technology:
+The application should avoid intentionally drifting away from the current live position.
+
+If the player falls significantly behind the live edge due to buffering or another recoverable condition, the implementation may provide a simple:
 
 ```text
-HTML5
-CSS
-Vanilla JavaScript
+[Go Live]
 ```
 
-Do not introduce React, Vue, Angular, or another frontend framework unless research demonstrates a compelling reason.
+control.
 
-The application should feel like a small utility rather than a commercial streaming platform.
+If implemented, `Go Live` must return playback to the current live edge.
 
-Suggested layout:
+Do not implement manual DVR navigation.
+
+---
+
+# 13. Live UI
+
+The UI should clearly distinguish Live Mode from VOD Mode.
+
+Example:
 
 ```text
 ┌──────────────────────────────────────────────────┐
-│ Twitch VOD URL                                   │
-│ [ https://www.twitch.tv/videos/... ] [Load VOD] │
+│ Twitch URL                                       │
+│ [ https://www.twitch.tv/ibai ]          [Load]  │
 └──────────────────────────────────────────────────┘
+
+                    🔴 LIVE
 
 ┌──────────────────────────────────────────────────┐
 │                                                  │
@@ -388,645 +393,528 @@ Suggested layout:
 │                                                  │
 └──────────────────────────────────────────────────┘
 
-01:23:45 / 03:17:21
+                 [ ▶ / ❚❚ ] [ 🔊 ] [ ⛶ ]
 
-[-30s] [-15s] [-5s] [▶ / ❚❚] [+5s] [+15s] [+30s]
-
-Timestamp:
-[ 01 ] : [ 23 ] : [ 45 ] [Go]
-
-Skip intervals:
-Backward: [5] [15] [30]
-Forward:  [5] [15] [30]
+HLS Source
+https://usw21.playlist.ttvnw.net/...
+                                      [Copy]
 ```
 
-The exact visual design can differ, but simplicity is a hard requirement.
+The UI should NOT display VOD controls while in Live Mode.
 
 ---
 
-# 11. Backend Requirements
+# 14. URL Validation
 
-A small Python backend should be used where necessary to perform Twitch VOD resolution and avoid browser limitations.
+The application must distinguish between:
 
-The backend should expose a minimal API.
-
-The exact endpoint structure is up to the agent, but a reasonable design is:
-
-```text
-POST /api/vod/resolve
-```
-
-Request:
-
-```json
-{
-  "url": "https://www.twitch.tv/videos/2858768912"
-}
-```
-
-Response should contain the information required by the frontend to initialize playback.
-
-Do not expose Twitch credentials, client secrets, or other sensitive values to the browser.
-
-If the selected Twitch resolution mechanism does not require a backend, the agent may simplify the architecture, but this decision must be justified by research.
-
----
-
-# 12. Error Handling
-
-The application must provide useful errors for at least:
-
-### Invalid URL
-
-```text
-Invalid Twitch VOD URL.
-```
-
-### VOD cannot be resolved
-
-```text
-Unable to resolve this Twitch VOD.
-```
-
-### VOD unavailable
-
-```text
-This VOD is unavailable or cannot be accessed.
-```
-
-### HLS playback failure
-
-```text
-The VOD was found, but playback could not be started.
-```
-
-### Network failure
-
-```text
-Unable to contact the VOD resolver.
-```
-
-Errors should be visible to the user without exposing sensitive implementation details.
-
-Developer-facing logs may contain more diagnostic information.
-
----
-
-# 13. Security Requirements
-
-Security is important even though this is a small local application.
-
-## SSRF prevention
-
-The backend MUST NOT blindly fetch arbitrary URLs supplied by the user.
-
-The VOD input must first be validated as an allowed Twitch VOD URL.
-
-Do not create a generic endpoint such as:
-
-```text
-GET /fetch?url=<arbitrary-url>
-```
-
-that causes the server to request any URL supplied by the user.
-
-Only supported Twitch VOD URLs should be accepted.
-
-The implementation must prevent requests to:
-
-* `localhost`
-* `127.0.0.1`
-* private IP ranges
-* link-local addresses
-* arbitrary internal hostnames
-* cloud metadata endpoints
-* arbitrary external domains
-
-unless explicitly required by the selected Twitch resolution mechanism and justified in the implementation plan.
-
-## Secrets
-
-If Twitch credentials or API credentials are required:
-
-* Keep them server-side.
-* Load them from environment variables.
-* Never hardcode them.
-* Never return them to the frontend.
-* Never commit them to Git.
-
-Provide a `.env.example` if environment variables are required.
-
-## Input validation
-
-Validate:
-
-* URL format
-* Twitch hostname
-* VOD ID format
-* skip interval values
-* timestamp values
-
-Never trust user-provided values.
-
-## Dependency security
-
-Use maintained dependencies.
-
-Do not add dependencies merely for convenience.
-
-The agent must prefer standard-library functionality when reasonable.
-
----
-
-# 14. Privacy
-
-The MVP should be local-first.
-
-The application must NOT require:
-
-* user accounts
-* registration
-* cookies for application identity
-* a database
-* analytics
-* telemetry
-* tracking
-* server-side playback history
-
-Skip interval settings should remain in browser `localStorage`.
-
-The application should not store VOD URLs unless explicitly required for the current session.
-
----
-
-# 15. Non-Goals
-
-The following are explicitly OUT OF SCOPE for the MVP:
-
-* Twitch account authentication.
-* User accounts.
-* Database integration.
-* Playback history.
-* Favorites.
-* Playlists.
-* VOD downloading.
-* VOD recording.
-* Video transcoding.
-* Video editing.
-* Clip creation.
-* Twitch chat integration.
-* Twitch emotes.
-* Streamer profiles.
-* Channel browsing.
-* Search across Twitch.
-* Live-stream playback unless it naturally falls out of the chosen architecture and requires no additional complexity.
-* Multi-user deployment.
-* Cloud hosting infrastructure.
-* Mobile native applications.
-* Desktop native applications.
-* Complex UI frameworks.
-* Server-side storage of VODs.
-* Circumventing private, restricted, or authentication-protected Twitch content.
-
-Do not expand the project beyond the MVP without explicit approval.
-
----
-
-# 16. Architecture Guidelines
-
-Prefer a small architecture.
-
-A reasonable structure is:
-
-```text
-witch/
-├── README.md
-├── pyproject.toml
-├── .gitignore
-├── .env.example          # only if needed
-├── src/
-│   └── witch/
-│       ├── __init__.py
-│       ├── ...
-│       └── ...
-└── tests/
-    └── ...
-```
-
-Frontend assets may be placed inside the Python package and served by the backend.
-
-The exact structure may be adjusted if the selected implementation requires it.
-
-Avoid premature abstractions.
-
-The resolver should be isolated from:
-
-* HTTP API handling
-* HTML UI
-* HLS playback
-* localStorage logic
-
-This separation is important because Twitch's resolution mechanism is the component most likely to change in the future.
-
----
-
-# 17. Twitch Resolution Research
-
-Before writing the resolver implementation, the agent MUST perform technical research.
-
-The research should answer:
-
-### A. Official APIs
-
-Determine whether Twitch's official APIs provide enough information to resolve a public VOD into a playable HLS playlist.
-
-### B. Playback mechanism
-
-Determine how the current Twitch web player obtains playback information.
-
-### C. Authentication
-
-Determine whether public VOD playback requires:
-
-* Twitch OAuth
-* Client-ID
-* access token
-* playback access token
-* anonymous access
-* another mechanism
-
-### D. Browser limitations
-
-Determine whether the `.m3u8` can be retrieved directly by the browser.
-
-Investigate:
-
-* CORS
-* cookies
-* headers
-* temporary URLs
-* signed URLs
-* browser security policies
-
-### E. Backend architecture
-
-Determine whether resolution should happen:
-
-```text
-Browser → Twitch
-```
-
-or:
-
-```text
-Browser → Witch backend → Twitch
-```
-
-and explain the decision.
-
-### F. Stability
-
-Determine whether the chosen method is:
-
-* documented
-* officially supported
-* semi-documented
-* undocumented/internal
-* likely to change
-
-The implementation should favor the most stable and appropriate option.
-
-### G. Legal/Terms constraints
-
-Review relevant Twitch documentation and terms applicable to the selected mechanism.
-
-The application must not be designed to bypass access controls or obtain content that the user is not authorized to access.
-
-### Research output
-
-Before implementation, record the important findings in the project documentation or implementation plan.
-
-Do not silently choose a Twitch endpoint based solely on a random blog post or outdated Stack Overflow answer.
-
----
-
-# 18. Testing Requirements
-
-The MVP should include automated tests for the backend logic where practical.
-
-At minimum, test:
-
-### URL validation
-
-* Valid Twitch VOD URL.
-* Invalid Twitch URL.
-* Non-Twitch URL.
-* Malformed URL.
-* Arbitrary URL attempting SSRF.
-
-### Timestamp conversion
-
-Test:
-
-```text
-00:00:00 → 0
-00:00:30 → 30
-01:00:00 → 3600
-01:23:45 → 5025
-```
-
-### Timestamp validation
-
-Test:
-
-* Negative values.
-* Invalid minutes.
-* Invalid seconds.
-* Empty fields.
-* Timestamp beyond duration.
-
-### Skip calculations
-
-Test:
-
-```text
-currentTime = 100
-skip = -30
-result = 70
-```
-
-and boundary cases:
-
-```text
-currentTime = 10
-skip = -30
-result = 0
-```
-
-```text
-currentTime = duration - 10
-skip = +30
-result = duration
-```
-
-### Settings
-
-Test:
-
-* Default settings.
-* Saving settings.
-* Loading settings.
-* Invalid localStorage data.
-* Missing localStorage data.
-
-Frontend behavior may be tested manually if adding a browser test framework would create disproportionate complexity for this MVP.
-
----
-
-# 19. Acceptance Criteria
-
-The implementation is considered complete only when all of the following are true.
-
-## AC-01 — Project initialization
-
-A working `uv` Python application named `witch` exists with:
-
-* `pyproject.toml`
-* `README.md`
-* Python package
-* virtual environment support
-* setuptools build backend
-
-## AC-02 — VOD URL input
-
-The user can paste:
+### Valid VOD
 
 ```text
 https://www.twitch.tv/videos/2858768912
 ```
 
-and initiate loading without providing an `.m3u8` URL.
-
-## AC-03 — VOD resolution
-
-Witch automatically resolves the supplied public Twitch VOD into a playable HLS source using the researched implementation.
-
-The implementation does not rely on a hardcoded `.m3u8`.
-
-## AC-04 — Custom player
-
-The VOD plays inside Witch's own HTML5-based player.
-
-The Twitch embedded player is not required for playback.
-
-## AC-05 — Playback controls
-
-The user can:
-
-* play
-* pause
-* seek
-* see current time
-* see total duration
-
-## AC-06 — Custom skip intervals
-
-The user can configure skip intervals instead of being restricted to a fixed ±30 seconds.
-
-The configured intervals work for both forward and backward navigation.
-
-## AC-07 — Timestamp seeking
-
-The user can enter:
+### Valid channel
 
 ```text
-HH:MM:SS
+https://www.twitch.tv/ibai
 ```
 
-and jump directly to that position.
+### Invalid Twitch URL
 
-## AC-08 — Persistent settings
+```text
+https://example.com/foo
+```
 
-Skip interval settings persist across page reloads through `localStorage`.
+### Arbitrary URL
 
-No database is used.
+```text
+http://localhost:8000
+```
 
-## AC-09 — Error handling
-
-Invalid URLs, resolution failures, unavailable VODs, network failures, and playback errors produce understandable user-facing messages.
-
-## AC-10 — Security
-
-The backend cannot be trivially abused as an arbitrary URL fetcher.
-
-Secrets are not exposed to the frontend.
-
-User input is validated.
-
-## AC-11 — Tests
-
-Automated tests cover the important URL validation, timestamp, skip, and settings logic.
-
-## AC-12 — Documentation
-
-`README.md` explains:
-
-* What Witch is.
-* Requirements.
-* How to install dependencies with `uv`.
-* How to run the application.
-* How to configure required environment variables, if any.
-* How the Twitch VOD resolver works at a high level.
-* Known limitations.
-* How to run tests.
+Only valid Twitch URLs should enter the Twitch resolution workflow.
 
 ---
 
-# 20. Development Workflow
+# 15. Security Requirements
 
-The coding agent should follow this order:
+## SSRF prevention
 
-### Phase 1 — Inspect
+The live resolver must not become a generic URL-fetching proxy.
 
-Inspect the newly initialized repository and verify the environment.
+Do NOT implement:
 
-### Phase 2 — Research
+```text
+GET /fetch?url=<arbitrary-url>
+```
 
-Investigate the current Twitch VOD playback/resolution mechanism.
+where arbitrary user input is fetched by the backend.
 
-Do NOT implement the resolver before this research.
+The backend must first parse and validate the Twitch URL.
 
-### Phase 3 — Decide
+Only the required Twitch domains/endpoints should be contacted.
 
-Document the selected resolution mechanism and architecture.
+Prevent access to:
 
-If multiple viable approaches exist, compare them and select the simplest stable option.
+* localhost.
+* `127.0.0.1`.
+* Private IPv4 ranges.
+* Private IPv6 ranges.
+* Link-local addresses.
+* Cloud metadata endpoints.
+* Internal hostnames.
+* Arbitrary user-controlled domains.
 
-### Phase 4 — Implement foundation
+---
 
-Create the Python application structure and minimal backend.
+## Secrets
 
-### Phase 5 — Implement resolver
+If Twitch API credentials are required:
 
-Implement Twitch VOD URL → playable HLS source resolution.
+* Store them in environment variables.
+* Never hardcode them.
+* Never expose them to the browser.
+* Never return them through the API.
+* Never commit them to Git.
 
-### Phase 6 — Implement player
+If required, provide:
 
-Implement HTML5/HLS playback.
+```text
+.env.example
+```
 
-### Phase 7 — Implement navigation
+with placeholder values only.
+
+---
+
+## HLS URL Handling
+
+The resolved `.m3u8` URL may contain sensitive or temporary query parameters.
+
+Do not:
+
+* Log the full URL unnecessarily.
+* Persist it.
+* Include it in analytics.
+* Store it in the database.
+* Send it to unrelated services.
+
+Developer logs should redact sensitive query parameters where appropriate.
+
+---
+
+# 16. Local-First Requirements
+
+Witch remains a small local application.
+
+Do not introduce:
+
+* Database.
+* Authentication.
+* User accounts.
+* Cloud storage.
+* Analytics.
+* Telemetry.
+* Server-side session persistence.
+
+The only existing persistent application setting should remain the VOD skip interval configuration in `localStorage`.
+
+Live HLS URLs should not be persisted.
+
+---
+
+# 17. Error Handling
+
+The Live flow must distinguish common failure states.
+
+## Invalid channel URL
+
+```text
+Invalid Twitch channel URL.
+```
+
+## Channel offline
+
+```text
+This Twitch channel is currently offline.
+```
+
+## Channel not found
+
+```text
+Twitch channel not found.
+```
+
+## Live resolution failure
+
+```text
+Unable to resolve the live stream.
+```
+
+## HLS playback failure
+
+```text
+The live stream was found, but playback could not be started.
+```
+
+## Stream ended
+
+If the stream goes offline while Witch is playing:
+
+```text
+The live stream has ended.
+```
+
+The UI should allow the user to attempt:
+
+```text
+[Reload]
+```
+
+rather than crashing.
+
+---
+
+# 18. Live Stream Lifecycle
+
+Live streams can end while the application is running.
+
+The implementation must account for this.
+
+Expected behavior:
+
+```text
+LIVE
+  │
+  │ streamer ends stream
+  ▼
+HLS stops / playlist becomes unavailable
+  │
+  ▼
+Witch detects failure/end
+  │
+  ▼
+"Stream has ended"
+```
+
+Do not treat a normal stream ending as an application crash.
+
+The user should be able to load the channel again to check whether it has started streaming again.
+
+---
+
+# 19. Reuse Existing Player Infrastructure
+
+If Phase 1 already has a reusable player abstraction, extend it.
+
+For example:
+
+```text
+Player
+│
+├── VOD mode
+│     ├── seek
+│     ├── skip
+│     └── timestamp
+│
+└── LIVE mode
+      ├── live state
+      ├── play
+      └── go live, if necessary
+```
+
+Do not duplicate the entire video-player implementation.
+
+However, do not force VOD behavior onto Live playback.
+
+Shared playback mechanics may be reused; navigation behavior must remain mode-specific.
+
+---
+
+# 20. Tests
+
+Add tests for the new functionality where practical.
+
+## URL classification
+
+Test:
+
+```text
+/videos/<id> → VOD
+/<channel>   → CHANNEL
+invalid      → INVALID
+```
+
+## Live URL validation
+
+Test:
+
+* Valid Twitch channel URL.
+* Invalid Twitch URL.
+* Non-Twitch URL.
+* Malformed URL.
+* Attempted localhost URL.
+* Attempted private/internal URL.
+
+## Live status
+
+Mock the Twitch API/resolution layer and test:
+
+```text
+LIVE
+OFFLINE
+NOT FOUND
+ERROR
+```
+
+## Resolver
+
+Test the resolver's handling of:
+
+* Successful live resolution.
+* Resolution failure.
+* Missing playback information.
+* Expired/invalid playback information.
+
+Do not make automated tests depend on a real Twitch stream being live.
+
+## Regression
+
+Run all existing Phase 1 VOD tests after implementing Phase 2.
+
+The existing VOD test suite must remain passing.
+
+---
+
+# 21. Manual Verification
+
+The agent should perform a local end-to-end test using a currently live public Twitch channel when one is available.
+
+Verify:
+
+1. Open Witch.
+2. Enter a Twitch channel URL.
+3. Load the channel.
+4. Witch detects that it is live.
+5. Witch resolves the HLS source.
+6. The HLS URL appears in the UI.
+7. The HLS URL can be copied.
+8. The video starts playing.
+9. The UI clearly indicates `LIVE`.
+10. VOD-specific controls are not displayed.
+11. The stream remains at/near the live position.
+12. Existing VOD playback still works afterward.
+
+If no public channel is live during testing, document that limitation and run all available mocked/integration tests instead.
+
+---
+
+# 22. Documentation
+
+Update `README.md` to include:
+
+## Live support
+
+Explain that Witch now supports:
+
+```text
+Twitch VOD
+Twitch Live
+```
+
+Explain the difference:
+
+```text
+VOD
+- Seeking
+- Skip intervals
+- Timestamp selection
+
+LIVE
+- Real-time playback
+- No rewind
+- No fast-forward
+- No timestamp selection
+```
+
+Also document:
+
+* How live resolution works at a high level.
+* Whether Twitch credentials are required.
+* Required environment variables.
+* Known limitations.
+* The fact that HLS URLs may expire.
+* That live playback depends on Twitch's current playback infrastructure.
+
+Do not document private credentials or sensitive tokens.
+
+---
+
+# 23. Definition of Done
+
+Phase 2 is complete when:
+
+* [ ] A Twitch channel URL can be entered into Witch.
+* [ ] Witch correctly identifies it as a channel rather than a VOD.
+* [ ] Witch determines whether the channel is live.
+* [ ] Offline channels produce a clear offline message.
+* [ ] Live channels are resolved to a playable HLS source.
+* [ ] The HLS source is displayed in the UI.
+* [ ] The HLS source can be copied.
+* [ ] The live stream plays inside Witch's own player.
+* [ ] The UI clearly indicates `LIVE`.
+* [ ] VOD skip controls are not shown for Live.
+* [ ] VOD timestamp controls are not shown for Live.
+* [ ] No DVR functionality is implemented.
+* [ ] Live stream termination is handled gracefully.
+* [ ] Invalid URLs are rejected safely.
+* [ ] The backend cannot be trivially abused as an SSRF proxy.
+* [ ] Secrets remain server-side.
+* [ ] Existing VOD functionality continues to work.
+* [ ] Existing VOD tests pass.
+* [ ] New Live-related tests pass.
+* [ ] README documentation is updated.
+
+---
+
+# 24. Implementation Workflow
+
+The coding agent should follow this order.
+
+### Phase 2.1 — Inspect existing implementation
+
+Understand the completed Phase 1 architecture before changing anything.
+
+Identify:
+
+* URL handling.
+* VOD resolver.
+* HLS player.
+* API layer.
+* Frontend player controls.
+* Tests.
+
+Do not refactor working code unless necessary.
+
+### Phase 2.2 — Research Twitch Live
+
+Investigate the current official and technical Twitch playback mechanisms.
+
+Determine:
+
+* Live detection.
+* HLS resolution.
+* Authentication requirements.
+* CORS.
+* Temporary URL behavior.
+* Backend/frontend responsibilities.
+
+### Phase 2.3 — Architecture decision
+
+Document the selected Live resolution mechanism before implementing it.
+
+### Phase 2.4 — URL classification
+
+Add VOD vs channel URL classification while preserving existing VOD behavior.
+
+### Phase 2.5 — Live resolver
+
+Implement the smallest reliable Live resolver.
+
+### Phase 2.6 — Live player mode
+
+Extend the existing player to support a Live mode.
+
+### Phase 2.7 — Live UI
 
 Add:
 
-* custom skip intervals
-* backward buttons
-* forward buttons
-* timestamp selector
-* current/total time display
+* Live indicator.
+* HLS source display.
+* Copy button.
+* Live-specific controls.
 
-### Phase 8 — Persistence
+### Phase 2.8 — Error handling
 
-Add `localStorage` persistence for skip intervals.
+Implement offline, unavailable, resolution failure, playback failure, and stream-ended states.
 
-### Phase 9 — Error handling
+### Phase 2.9 — Security review
 
-Handle resolution, network, validation, and playback failures.
+Verify URL validation and SSRF protections.
 
-### Phase 10 — Tests
+### Phase 2.10 — Testing
 
-Add and run the relevant automated tests.
+Run:
 
-### Phase 11 — Documentation
+* New Live tests.
+* Existing VOD tests.
+* Application locally.
 
-Complete `README.md`.
+### Phase 2.11 — Documentation
 
-### Phase 12 — Verification
-
-Run the application locally and manually verify the complete user flow.
-
----
-
-# 21. Definition of Done
-
-Witch is DONE when a user can perform the following without technical knowledge:
-
-1. Start the application locally.
-2. Open the web UI.
-3. Paste a Twitch VOD URL.
-4. Click `Load VOD`.
-5. The application resolves the VOD automatically.
-6. The VOD begins playing inside Witch.
-7. The user can pause/play.
-8. The user can jump backward and forward using custom intervals.
-9. The user can modify those intervals.
-10. The settings remain after refreshing the page.
-11. The user can enter an exact `HH:MM:SS` timestamp.
-12. The player jumps directly to that timestamp.
-13. Invalid input produces a useful error rather than crashing.
-14. No database or user account is required.
+Update README with Live support and limitations.
 
 ---
 
-# 22. Implementation Principles
+# 25. Important Agent Constraints
 
-The agent MUST follow these principles:
+The coding agent MUST:
 
-1. **Research before implementation.**
-   Do not guess how Twitch currently exposes VOD playback.
-
-2. **Keep it small.**
-   This is an MVP utility, not a streaming platform.
-
-3. **Prefer simple technologies.**
-   HTML5, CSS, vanilla JavaScript, and a lightweight Python backend are preferred.
-
-4. **Separate Twitch resolution from playback.**
-   Twitch-specific logic should be isolated so it can be replaced if Twitch changes its implementation.
-
-5. **Do not expose secrets.**
-
-6. **Do not create an SSRF primitive.**
-
-7. **Do not bypass access controls.**
-
-8. **Do not add unnecessary dependencies.**
-
-9. **Do not introduce a database.**
-
-10. **Do not introduce authentication.**
-
-11. **Do not implement features outside the MVP scope.**
-
-12. **Make completion testable.**
-    Every major requirement should be verifiable through the acceptance criteria.
+1. Treat Phase 1 VOD functionality as working and protected.
+2. Research Twitch Live playback before implementing the resolver.
+3. Prefer official Twitch APIs where they are appropriate and sufficient.
+4. Keep Live resolution separate from VOD resolution.
+5. Keep the application local-first.
+6. Avoid introducing a database.
+7. Avoid authentication unless technically required.
+8. Avoid arbitrary URL fetching.
+9. Prevent SSRF.
+10. Keep credentials server-side.
+11. Never bypass Twitch access controls.
+12. Never implement downloading or recording as part of this phase.
+13. Never add DVR/rewind functionality.
+14. Never expose VOD-only controls during Live playback.
+15. Keep the implementation minimal.
+16. Preserve all Phase 1 behavior.
 
 ---
 
-# 23. Agent Instruction
+# 26. Expected Result
 
-You are implementing this project from this specification.
+After Phase 2, Witch should conceptually support:
 
-Treat this document as the source of truth for the MVP.
+```text
+                         WITCH
+                           │
+                    Twitch URL input
+                           │
+              ┌────────────┴────────────┐
+              │                         │
+         /videos/<id>              /<channel>
+              │                         │
+              ▼                         ▼
+             VOD                    Is Live?
+              │                    ┌────┴────┐
+              │                   NO         YES
+              │                    │          │
+              │                 Offline       ▼
+              │                              HLS
+              ▼                               │
+        VOD HLS Player                        │
+              │                               │
+      ┌───────┼────────┐                      │
+      ▼       ▼        ▼                      ▼
+    Skip   Timestamp  Seek              LIVE Player
+                                           │
+                                      ┌────┴────┐
+                                      ▼         ▼
+                                    Video    HLS URL
+                                               │
+                                             [Copy]
+```
 
-Before making implementation decisions involving Twitch VOD resolution, perform current technical research and document the relevant findings.
+The key product distinction is:
 
-Do not ask the user to provide the `.m3u8` URL.
+> **VOD is a navigable recording. Live is simply a live stream.**
 
-Do not hardcode the example VOD.
-
-Do not assume undocumented Twitch behavior is permanent.
-
-If the researched approach has an important limitation, document it clearly and implement the safest reasonable fallback rather than silently working around the limitation.
-
-Do not expand the project scope.
-
-At the end of implementation, provide:
-
-1. A concise summary of the architecture.
-2. The Twitch VOD resolution approach selected and why.
-3. Files created or modified.
-4. Dependencies added.
-5. Environment variables required, if any.
-6. Tests executed and their results.
-7. Known limitations.
-8. Exact command(s) required to run Witch locally.
+Phase 2 should add the latter without compromising the former.

@@ -4,6 +4,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const urlInput = document.getElementById('vod-url');
     const errorMsg = document.getElementById('error-msg');
     
+    // Live UI elements
+    const liveIndicator = document.getElementById('live-indicator');
+    const hlsUrlContainer = document.getElementById('hls-url-container');
+    const hlsUrlInput = document.getElementById('hls-url-input');
+    const copyHlsBtn = document.getElementById('copy-hls-btn');
+    
+    // VOD UI elements
+    const vodSkipBack = document.getElementById('vod-skip-back-container');
+    const vodSkipFwd = document.getElementById('vod-skip-fwd-container');
+    const vodTimestamp = document.getElementById('vod-timestamp-container');
+    const vodSettings = document.getElementById('vod-settings-panel');
+    
     // Time display
     const currentTimeEl = document.getElementById('current-time');
     const totalTimeEl = document.getElementById('total-time');
@@ -16,6 +28,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const tsH = document.getElementById('ts-h');
     const tsM = document.getElementById('ts-m');
     const tsS = document.getElementById('ts-s');
+    
+    let isLiveMode = false;
+    let hls = null;
     
     // Skip intervals
     let skipIntervals = {
@@ -45,7 +60,6 @@ document.addEventListener('DOMContentLoaded', () => {
         document.querySelector('.sf2-val').textContent = skipIntervals.forward[1];
         document.querySelector('.sf3-val').textContent = skipIntervals.forward[2];
         
-        // Update input values
         document.getElementById('sb3-input').value = skipIntervals.backward[0];
         document.getElementById('sb2-input').value = skipIntervals.backward[1];
         document.getElementById('sb1-input').value = skipIntervals.backward[2];
@@ -78,6 +92,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Skip buttons
     const skip = (amount) => {
+        if (isLiveMode) return; // Prevent seeking in live mode
         if (!video.duration) return;
         let newTime = video.currentTime + amount;
         if (newTime < 0) newTime = 0;
@@ -104,6 +119,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Timestamp Go
     goBtn.addEventListener('click', () => {
+        if (isLiveMode) return;
         if (!video.duration) return;
         const h = parseInt(tsH.value) || 0;
         const m = parseInt(tsM.value) || 0;
@@ -126,7 +142,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Time formatting
     const formatTime = (seconds) => {
-        if (isNaN(seconds)) return "00:00:00";
+        if (isNaN(seconds) || !isFinite(seconds)) return "00:00:00";
         const h = Math.floor(seconds / 3600);
         const m = Math.floor((seconds % 3600) / 60);
         const s = Math.floor(seconds % 60);
@@ -134,11 +150,26 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     
     video.addEventListener('timeupdate', () => {
-        currentTimeEl.textContent = formatTime(video.currentTime);
+        if (isLiveMode) {
+            currentTimeEl.textContent = "LIVE";
+            totalTimeEl.textContent = "LIVE";
+        } else {
+            currentTimeEl.textContent = formatTime(video.currentTime);
+        }
     });
     
     video.addEventListener('loadedmetadata', () => {
-        totalTimeEl.textContent = formatTime(video.duration);
+        if (!isLiveMode) {
+            totalTimeEl.textContent = formatTime(video.duration);
+        }
+    });
+    
+    copyHlsBtn.addEventListener('click', () => {
+        hlsUrlInput.select();
+        document.execCommand('copy');
+        const oldText = copyHlsBtn.textContent;
+        copyHlsBtn.textContent = "Copied!";
+        setTimeout(() => copyHlsBtn.textContent = oldText, 2000);
     });
     
     const showError = (msg) => {
@@ -150,12 +181,33 @@ document.addEventListener('DOMContentLoaded', () => {
         errorMsg.classList.add('hidden');
     };
     
-    let hls = null;
+    const setLiveMode = (isLive) => {
+        isLiveMode = isLive;
+        if (isLive) {
+            liveIndicator.classList.remove('hidden');
+            hlsUrlContainer.classList.remove('hidden');
+            vodSkipBack.classList.add('hidden');
+            vodSkipFwd.classList.add('hidden');
+            vodTimestamp.classList.add('hidden');
+            vodSettings.classList.add('hidden');
+            currentTimeEl.textContent = "LIVE";
+            totalTimeEl.textContent = "LIVE";
+        } else {
+            liveIndicator.classList.add('hidden');
+            hlsUrlContainer.classList.add('hidden');
+            vodSkipBack.classList.remove('hidden');
+            vodSkipFwd.classList.remove('hidden');
+            vodTimestamp.classList.remove('hidden');
+            vodSettings.classList.remove('hidden');
+            currentTimeEl.textContent = "00:00:00";
+            totalTimeEl.textContent = "00:00:00";
+        }
+    };
     
     loadBtn.addEventListener('click', async () => {
         const url = urlInput.value.trim();
         if (!url) {
-            showError("Please enter a Twitch VOD URL.");
+            showError("Please enter a Twitch URL.");
             return;
         }
         
@@ -164,7 +216,7 @@ document.addEventListener('DOMContentLoaded', () => {
         loadBtn.textContent = "Loading...";
         
         try {
-            const res = await fetch('/api/vod/resolve', {
+            const res = await fetch('/api/resolve', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ url })
@@ -173,9 +225,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await res.json();
             
             if (!res.ok) {
-                showError(data.error || "Unable to resolve this Twitch VOD.");
+                showError(data.error || "Unable to resolve this Twitch stream.");
                 loadBtn.disabled = false;
-                loadBtn.textContent = "Load VOD";
+                loadBtn.textContent = "Load";
                 return;
             }
             
@@ -183,14 +235,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 hls.destroy();
             }
             
+            const type = data.type; // 'live' or 'vod'
             const m3u8_url = data.m3u8_url;
+            
+            setLiveMode(type === 'live');
+            
+            if (type === 'live') {
+                hlsUrlInput.value = data.raw_url || m3u8_url;
+            }
             
             if (Hls.isSupported()) {
                 hls = new Hls({
-                    xhrSetup: function(xhr, url) {
-                        // The server rewrites the absolute URLs in m3u8 to be relative proxy URLs, 
-                        // so Hls.js will natively request the proxy endpoints.
-                    }
+                    liveSyncDurationCount: 3,
+                    liveMaxLatencyDurationCount: 10,
                 });
                 hls.loadSource(m3u8_url);
                 hls.attachMedia(video);
@@ -199,7 +256,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
                 hls.on(Hls.Events.ERROR, (event, data) => {
                     if (data.fatal) {
-                        showError("The VOD was found, but playback could not be started.");
+                        showError("The stream was found, but playback could not be started or has ended.");
+                        loadBtn.disabled = false;
+                        loadBtn.textContent = "Reload";
                     }
                 });
             } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
@@ -207,16 +266,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 video.addEventListener('loadedmetadata', () => {
                     video.play();
                 });
+                video.addEventListener('error', () => {
+                    showError("The stream was found, but playback could not be started or has ended.");
+                    loadBtn.disabled = false;
+                    loadBtn.textContent = "Reload";
+                });
             } else {
                 showError("Your browser does not support HLS playback.");
             }
             
         } catch (e) {
-            showError("Unable to contact the VOD resolver.");
+            showError("Unable to contact the resolver.");
             console.error(e);
         }
         
         loadBtn.disabled = false;
-        loadBtn.textContent = "Load VOD";
+        loadBtn.textContent = "Load";
     });
 });

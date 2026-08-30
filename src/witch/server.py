@@ -16,18 +16,50 @@ CLIENT_ID = "kimne78kx3ncx6brgo4mv6wki5h1ko"
 class ResolveRequest(BaseModel):
     url: str
 
-def extract_vod_id(url: str):
+def extract_url_type(url: str):
     if not url.startswith('http://') and not url.startswith('https://'):
-        return None
+        return None, None
     parsed = urllib.parse.urlparse(url)
     if not parsed.hostname or not parsed.hostname.endswith('twitch.tv'):
-        return None
-    match = re.search(r'/videos/(\d+)', parsed.path)
-    if match:
-        return match.group(1)
-    return None
+        return None, None
+        
+    vod_match = re.search(r'/videos/(\d+)', parsed.path)
+    if vod_match:
+        return 'vod', vod_match.group(1)
+        
+    # Example: https://www.twitch.tv/ibai
+    # Exclude common non-channel paths if necessary, but this is an MVP
+    channel_match = re.match(r'^/([a-zA-Z0-9_]{4,25})/?$', parsed.path)
+    if channel_match:
+        return 'live', channel_match.group(1)
+        
+    return None, None
 
-async def get_playback_token(vod_id: str):
+async def check_live_status(channel: str):
+    url = "https://gql.twitch.tv/gql"
+    headers = {
+        "Client-ID": CLIENT_ID,
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "query": f'query{{user(login:"{channel}"){{stream{{id}}}}}}'
+    }
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(url, json=payload, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+            user = data.get('data', {}).get('user')
+            if not user:
+                return 'not_found'
+            if user.get('stream'):
+                return 'live'
+            return 'offline'
+        except Exception as e:
+            console.log(f"[red]Error checking live status: {e}[/red]")
+            return 'error'
+
+async def get_playback_token(id_val: str, is_live: bool):
     url = "https://gql.twitch.tv/gql"
     headers = {
         "Client-ID": CLIENT_ID,
@@ -42,10 +74,10 @@ async def get_playback_token(vod_id: str):
             }
         },
         "variables": {
-            "isLive": False,
-            "login": "",
-            "isVod": True,
-            "vodID": vod_id,
+            "isLive": is_live,
+            "login": id_val if is_live else "",
+            "isVod": not is_live,
+            "vodID": "" if is_live else id_val,
             "playerType": "embed"
         }
     }
@@ -55,28 +87,52 @@ async def get_playback_token(vod_id: str):
             response = await client.post(url, json=payload, headers=headers)
             response.raise_for_status()
             data = response.json()
-            return data['data']['videoPlaybackAccessToken']['value'], data['data']['videoPlaybackAccessToken']['signature']
+            token_data = data['data']['streamPlaybackAccessToken'] if is_live else data['data']['videoPlaybackAccessToken']
+            return token_data['value'], token_data['signature']
         except Exception as e:
             console.log(f"[red]Error fetching token: {e}[/red]")
             return None, None
 
-@app.post("/api/vod/resolve")
-async def resolve_vod(req: ResolveRequest):
-    console.log(f"[cyan]Resolving VOD URL:[/cyan] {req.url}")
-    vod_id = extract_vod_id(req.url)
-    if not vod_id:
-        console.log("[red]Invalid URL provided.[/red]")
-        return JSONResponse(status_code=400, content={"error": "Invalid Twitch VOD URL."})
-        
-    token, sig = await get_playback_token(vod_id)
-    if not token or not sig:
-        console.log(f"[red]Failed to get playback token for VOD {vod_id}[/red]")
-        return JSONResponse(status_code=404, content={"error": "Unable to resolve this Twitch VOD. It may be unavailable or restricted."})
-        
-    usher_url = f"https://usher.ttvnw.net/vod/{vod_id}?nauth={urllib.parse.quote(token)}&nauthsig={sig}&allow_source=true&player=twitchweb"
-    console.log(f"[green]Successfully resolved VOD {vod_id}[/green]")
+@app.post("/api/resolve")
+async def resolve_url(req: ResolveRequest):
+    console.log(f"[cyan]Resolving URL:[/cyan] {req.url}")
+    url_type, id_val = extract_url_type(req.url)
     
-    return {"m3u8_url": f"/proxy?url={urllib.parse.quote(usher_url)}"}
+    if not url_type:
+        console.log("[red]Invalid URL provided.[/red]")
+        return JSONResponse(status_code=400, content={"error": "Invalid Twitch URL."})
+        
+    if url_type == 'live':
+        status = await check_live_status(id_val)
+        if status == 'not_found':
+            return JSONResponse(status_code=404, content={"error": "Twitch channel not found."})
+        if status == 'offline':
+            return JSONResponse(status_code=400, content={"error": "This Twitch channel is currently offline."})
+        if status == 'error':
+            return JSONResponse(status_code=500, content={"error": "Error checking live status."})
+            
+    token, sig = await get_playback_token(id_val, is_live=(url_type == 'live'))
+    if not token or not sig:
+        console.log(f"[red]Failed to get playback token for {url_type} {id_val}[/red]")
+        return JSONResponse(status_code=404, content={"error": "Unable to resolve this Twitch stream. It may be unavailable or restricted."})
+        
+    if url_type == 'live':
+        usher_url = f"https://usher.ttvnw.net/api/channel/hls/{id_val}.m3u8?player=twitchweb&token={urllib.parse.quote(token)}&sig={sig}&allow_source=true"
+    else:
+        usher_url = f"https://usher.ttvnw.net/vod/{id_val}?nauth={urllib.parse.quote(token)}&nauthsig={sig}&allow_source=true&player=twitchweb"
+        
+    console.log(f"[green]Successfully resolved {url_type} {id_val}[/green]")
+    
+    return {
+        "type": url_type,
+        "m3u8_url": f"/proxy?url={urllib.parse.quote(usher_url)}",
+        "raw_url": usher_url
+    }
+
+# Ensure backwards compatibility for /api/vod/resolve if frontend expects it
+@app.post("/api/vod/resolve")
+async def resolve_vod_legacy(req: ResolveRequest):
+    return await resolve_url(req)
 
 def rewrite_m3u8(content: str, base_url: str):
     lines = content.splitlines()
