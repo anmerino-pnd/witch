@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Witch - Twitch VOD Player</title>
+    <link rel="stylesheet" href="app.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <header>
+            <h1>Witch</h1>
+            <p>Local-first Twitch VOD player with custom navigation</p>
+        </header>
+
+        <div class="url-input-container">
+            <input type="text" id="vod-url" placeholder="https://www.twitch.tv/videos/2858768912">
+            <button id="load-btn">Load VOD</button>
+        </div>
+        
+        <div id="error-msg" class="error-msg hidden"></div>
+        
+        <div class="player-wrapper">
+            <video id="video-player" controls></video>
+        </div>
+        
+        <div class="controls-panel">
+            <div class="time-display">
+                <span id="current-time">00:00:00</span> / <span id="total-time">00:00:00</span>
+            </div>
+            
+            <div class="playback-buttons">
+                <button id="skip-back-3" class="skip-btn">-<span class="sb3-val">30</span>s</button>
+                <button id="skip-back-2" class="skip-btn">-<span class="sb2-val">15</span>s</button>
+                <button id="skip-back-1" class="skip-btn">-<span class="sb1-val">5</span>s</button>
+                <button id="play-pause" class="play-btn">▶ / ❚❚</button>
+                <button id="skip-fwd-1" class="skip-btn">+<span class="sf1-val">5</span>s</button>
+                <button id="skip-fwd-2" class="skip-btn">+<span class="sf2-val">15</span>s</button>
+                <button id="skip-fwd-3" class="skip-btn">+<span class="sf3-val">30</span>s</button>
+            </div>
+            
+            <div class="timestamp-selector">
+                <label>Timestamp:</label>
+                <div class="ts-inputs">
+                    <input type="number" id="ts-h" min="0" placeholder="HH"><span>:</span>
+                    <input type="number" id="ts-m" min="0" max="59" placeholder="MM"><span>:</span>
+                    <input type="number" id="ts-s" min="0" max="59" placeholder="SS">
+                </div>
+                <button id="go-btn">Go</button>
+            </div>
+        </div>
+
+        <div class="settings-panel">
+            <h3>Skip Intervals</h3>
+            <div class="settings-grid">
+                <div class="settings-row">
+                    <label>Backward:</label>
+                    <input type="number" id="sb3-input" value="30">
+                    <input type="number" id="sb2-input" value="15">
+                    <input type="number" id="sb1-input" value="5">
+                </div>
+                <div class="settings-row">
+                    <label>Forward:</label>
+                    <input type="number" id="sf1-input" value="5">
+                    <input type="number" id="sf2-input" value="15">
+                    <input type="number" id="sf3-input" value="30">
+                </div>
+            </div>
+            <button id="save-settings-btn">Save Settings</button>
+        </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
+    <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,255 @@
+:root {
+    --bg-color: #0f0f13;
+    --panel-bg: rgba(25, 25, 30, 0.7);
+    --border-color: rgba(255, 255, 255, 0.1);
+    --primary-color: #9146FF; /* Twitch purple */
+    --primary-hover: #a970ff;
+    --text-color: #f0f0f5;
+    --text-muted: #a0a0aa;
+    --error-color: #ff4d4d;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 2rem;
+    background-image: 
+        radial-gradient(circle at 15% 50%, rgba(145, 70, 255, 0.08) 0%, transparent 50%),
+        radial-gradient(circle at 85% 30%, rgba(145, 70, 255, 0.05) 0%, transparent 50%);
+}
+
+.app-container {
+    width: 100%;
+    max-width: 1000px;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+header {
+    text-align: center;
+    margin-bottom: 1rem;
+}
+
+header h1 {
+    font-size: 2.5rem;
+    font-weight: 600;
+    color: var(--primary-color);
+    text-shadow: 0 0 20px rgba(145, 70, 255, 0.4);
+    letter-spacing: -1px;
+}
+
+header p {
+    color: var(--text-muted);
+    margin-top: 0.5rem;
+}
+
+.url-input-container {
+    display: flex;
+    gap: 1rem;
+    background: var(--panel-bg);
+    padding: 0.75rem;
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    backdrop-filter: blur(10px);
+}
+
+input[type="text"], input[type="number"] {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 1rem;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+input[type="text"]:focus, input[type="number"]:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px rgba(145, 70, 255, 0.25);
+}
+
+#vod-url {
+    flex-grow: 1;
+}
+
+button {
+    background: var(--primary-color);
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    font-weight: 500;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background-color 0.2s, transform 0.1s;
+    font-family: inherit;
+}
+
+button:hover {
+    background: var(--primary-hover);
+}
+
+button:active {
+    transform: scale(0.97);
+}
+
+.hidden {
+    display: none !important;
+}
+
+.error-msg {
+    background: rgba(255, 77, 77, 0.1);
+    color: var(--error-color);
+    padding: 1rem;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 77, 77, 0.3);
+    text-align: center;
+}
+
+.player-wrapper {
+    width: 100%;
+    aspect-ratio: 16/9;
+    background: #000;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid var(--border-color);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+}
+
+video {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+.controls-panel {
+    background: var(--panel-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    backdrop-filter: blur(10px);
+}
+
+.time-display {
+    text-align: center;
+    font-size: 1.25rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-color);
+    font-weight: 500;
+}
+
+.playback-buttons {
+    display: flex;
+    justify-content: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.skip-btn {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--border-color);
+}
+
+.skip-btn:hover {
+    background: rgba(255,255,255,0.1);
+}
+
+.play-btn {
+    padding: 0.75rem 2rem;
+    margin: 0 0.5rem;
+}
+
+.timestamp-selector {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    background: rgba(0,0,0,0.2);
+    padding: 1rem;
+    border-radius: 8px;
+}
+
+.ts-inputs {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.ts-inputs input {
+    width: 4rem;
+    text-align: center;
+    padding: 0.5rem;
+}
+
+.settings-panel {
+    background: var(--panel-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 1.5rem;
+    backdrop-filter: blur(10px);
+}
+
+.settings-panel h3 {
+    margin-bottom: 1rem;
+    color: var(--text-color);
+    font-weight: 500;
+}
+
+.settings-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.settings-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.settings-row label {
+    width: 80px;
+    color: var(--text-muted);
+}
+
+.settings-row input {
+    width: 5rem;
+    text-align: center;
+}
+
+@media (max-width: 768px) {
+    .url-input-container {
+        flex-direction: column;
+    }
+    
+    .playback-buttons {
+        gap: 0.25rem;
+    }
+    
+    .skip-btn {
+        padding: 0.5rem;
+        font-size: 0.85rem;
+    }
+    
+    .timestamp-selector {
+        flex-direction: column;
+    }
+}
