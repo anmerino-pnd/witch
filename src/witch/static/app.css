@@ -108,6 +108,21 @@ button:active {
     transform: scale(0.97);
 }
 
+.secondary-btn {
+    background: transparent;
+    border: 1px solid var(--border-color);
+}
+
+.secondary-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.settings-actions {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+}
+
 .hidden {
     display: none !important;
 }

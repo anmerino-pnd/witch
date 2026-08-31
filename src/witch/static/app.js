@@ -23,6 +23,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // Controls
     const playPauseBtn = document.getElementById('play-pause');
     const goBtn = document.getElementById('go-btn');
+    const watchAgainBtn = document.getElementById('watch-again-btn');
+    const clearCacheBtn = document.getElementById('clear-cache-btn');
     
     // Timestamp inputs
     const tsH = document.getElementById('ts-h');
@@ -30,6 +32,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const tsS = document.getElementById('ts-s');
     
     let isLiveMode = false;
+    let currentVodId = null;
     let hls = null;
     
     // Skip intervals
@@ -90,6 +93,19 @@ document.addEventListener('DOMContentLoaded', () => {
         updateSkipLabels();
     });
     
+    // Clear Cache Button
+    clearCacheBtn.addEventListener('click', async () => {
+        if (confirm("Are you sure you want to clear your entire watch history?")) {
+            try {
+                await fetch('/api/history', { method: 'DELETE' });
+                alert("Watch history cleared successfully.");
+            } catch (e) {
+                console.error("Failed to clear history", e);
+                alert("Failed to clear watch history.");
+            }
+        }
+    });
+    
     // Skip buttons
     const skip = (amount) => {
         if (isLiveMode) return; // Prevent seeking in live mode
@@ -140,6 +156,48 @@ document.addEventListener('DOMContentLoaded', () => {
         hideError();
     });
     
+    // Watch Again logic
+    watchAgainBtn.addEventListener('click', () => {
+        if (isLiveMode) return;
+        video.currentTime = 0;
+        video.play();
+        watchAgainBtn.classList.add('hidden');
+    });
+    
+    // History Tracking API Call
+    const saveHistory = async (timestamp) => {
+        if (isLiveMode || !currentVodId) return;
+        try {
+            await fetch(`/api/history/${currentVodId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ timestamp })
+            });
+        } catch (e) {
+            console.warn("Failed to save watch history", e);
+        }
+    };
+    
+    // History intervals and events
+    setInterval(() => {
+        if (!isLiveMode && currentVodId && !video.paused && video.duration) {
+            saveHistory(video.currentTime);
+        }
+    }, 15000);
+    
+    video.addEventListener('pause', () => {
+        if (!isLiveMode && currentVodId && video.duration) {
+            saveHistory(video.currentTime);
+        }
+    });
+    
+    window.addEventListener('beforeunload', () => {
+        if (!isLiveMode && currentVodId && video.duration && !video.paused) {
+            // Synchronous fetch not recommended, but best effort
+            navigator.sendBeacon(`/api/history/${currentVodId}`, JSON.stringify({ timestamp: video.currentTime }));
+        }
+    });
+    
     // Time formatting
     const formatTime = (seconds) => {
         if (isNaN(seconds) || !isFinite(seconds)) return "00:00:00";
@@ -155,12 +213,28 @@ document.addEventListener('DOMContentLoaded', () => {
             totalTimeEl.textContent = "LIVE";
         } else {
             currentTimeEl.textContent = formatTime(video.currentTime);
+            
+            // Show watch again button if we're at the very end
+            if (video.duration && video.currentTime >= video.duration - 1) {
+                watchAgainBtn.classList.remove('hidden');
+            } else {
+                watchAgainBtn.classList.add('hidden');
+            }
         }
     });
     
     video.addEventListener('loadedmetadata', () => {
         if (!isLiveMode) {
             totalTimeEl.textContent = formatTime(video.duration);
+            
+            // Apply saved history timestamp if present
+            if (video.dataset.startTs) {
+                const startTs = parseFloat(video.dataset.startTs);
+                if (startTs > 0) {
+                    video.currentTime = startTs;
+                }
+                video.dataset.startTs = ''; // clear it
+            }
         }
     });
     
@@ -190,6 +264,7 @@ document.addEventListener('DOMContentLoaded', () => {
             vodSkipFwd.classList.add('hidden');
             vodTimestamp.classList.add('hidden');
             vodSettings.classList.add('hidden');
+            watchAgainBtn.classList.add('hidden');
             currentTimeEl.textContent = "LIVE";
             totalTimeEl.textContent = "LIVE";
         } else {
@@ -199,6 +274,7 @@ document.addEventListener('DOMContentLoaded', () => {
             vodSkipFwd.classList.remove('hidden');
             vodTimestamp.classList.remove('hidden');
             vodSettings.classList.remove('hidden');
+            watchAgainBtn.classList.add('hidden'); // Only show when finished
             currentTimeEl.textContent = "00:00:00";
             totalTimeEl.textContent = "00:00:00";
         }
@@ -241,7 +317,19 @@ document.addEventListener('DOMContentLoaded', () => {
             setLiveMode(type === 'live');
             
             if (type === 'live') {
+                currentVodId = null;
                 hlsUrlInput.value = data.raw_url || m3u8_url;
+            } else {
+                currentVodId = data.id_val;
+                try {
+                    const histRes = await fetch(`/api/history/${currentVodId}`);
+                    if (histRes.ok) {
+                        const histData = await histRes.json();
+                        video.dataset.startTs = histData.timestamp || 0;
+                    }
+                } catch (e) {
+                    console.warn("Could not load history", e);
+                }
             }
             
             if (Hls.isSupported()) {

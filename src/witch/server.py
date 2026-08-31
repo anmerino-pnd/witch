@@ -1,6 +1,7 @@
 import os
 import re
 import urllib.parse
+import json
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -13,8 +14,29 @@ app = FastAPI()
 
 CLIENT_ID = "kimne78kx3ncx6brgo4mv6wki5h1ko"
 
+# Setup data directory for history
+DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'data')
+HISTORY_FILE = os.path.join(DATA_DIR, 'history.json')
+
+def load_history():
+    if not os.path.exists(HISTORY_FILE):
+        return {}
+    try:
+        with open(HISTORY_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except:
+        return {}
+
+def save_history(history):
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(HISTORY_FILE, 'w', encoding='utf-8') as f:
+        json.dump(history, f, indent=2)
+
 class ResolveRequest(BaseModel):
     url: str
+
+class HistoryUpdate(BaseModel):
+    timestamp: float
 
 def extract_url_type(url: str):
     if not url.startswith('http://') and not url.startswith('https://'):
@@ -28,7 +50,6 @@ def extract_url_type(url: str):
         return 'vod', vod_match.group(1)
         
     # Example: https://www.twitch.tv/ibai
-    # Exclude common non-channel paths if necessary, but this is an MVP
     channel_match = re.match(r'^/([a-zA-Z0-9_]{4,25})/?$', parsed.path)
     if channel_match:
         return 'live', channel_match.group(1)
@@ -126,13 +147,27 @@ async def resolve_url(req: ResolveRequest):
     return {
         "type": url_type,
         "m3u8_url": f"/proxy?url={urllib.parse.quote(usher_url)}",
-        "raw_url": usher_url
+        "raw_url": usher_url,
+        "id_val": id_val
     }
 
-# Ensure backwards compatibility for /api/vod/resolve if frontend expects it
-@app.post("/api/vod/resolve")
-async def resolve_vod_legacy(req: ResolveRequest):
-    return await resolve_url(req)
+@app.post("/api/history/{vod_id}")
+async def update_history(vod_id: str, req: HistoryUpdate):
+    history = load_history()
+    history[vod_id] = req.timestamp
+    save_history(history)
+    return {"success": True}
+
+@app.get("/api/history/{vod_id}")
+async def fetch_history(vod_id: str):
+    history = load_history()
+    return {"timestamp": history.get(vod_id, 0)}
+
+@app.delete("/api/history")
+async def clear_history():
+    save_history({})
+    console.log("[yellow]Watch history cleared[/yellow]")
+    return {"success": True}
 
 def rewrite_m3u8(content: str, base_url: str):
     lines = content.splitlines()
@@ -161,7 +196,6 @@ async def proxy_request(url: str):
 
     try:
         if is_m3u8:
-            console.log(f"[dim]Proxying M3U8:[/dim] {url}")
             async with httpx.AsyncClient() as client:
                 response = await client.get(url, headers={'User-Agent': 'Mozilla/5.0'})
                 response.raise_for_status()
@@ -189,6 +223,12 @@ app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
 
 def run_server(port=8000):
     import uvicorn
+    # Create empty cache dir if it doesn't exist
+    os.makedirs(DATA_DIR, exist_ok=True)
+    if not os.path.exists(HISTORY_FILE):
+        with open(HISTORY_FILE, 'w', encoding='utf-8') as f:
+            f.write("{}")
+
     console.rule("[bold purple]Witch Server Starting[/bold purple]")
     console.log(f"[green]Starting server on http://localhost:{port}[/green]")
     uvicorn.run(app, host="0.0.0.0", port=port, log_level="warning")

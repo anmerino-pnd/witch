@@ -66,6 +66,7 @@
                     <input type="number" id="ts-s" min="0" max="59" placeholder="SS">
                 </div>
                 <button id="go-btn">Go</button>
+                <button id="watch-again-btn" class="secondary-btn hidden" style="margin-left: 1rem;">Watch Again</button>
             </div>
         </div>
 
@@ -85,7 +86,10 @@
                     <input type="number" id="sf3-input" value="30">
                 </div>
             </div>
-            <button id="save-settings-btn">Save Settings</button>
+            <div class="settings-actions">
+                <button id="save-settings-btn">Save Settings</button>
+                <button id="clear-cache-btn" class="secondary-btn">Clear Watch History</button>
+            </div>
         </div>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
