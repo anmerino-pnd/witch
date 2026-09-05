@@ -38,23 +38,54 @@ class ResolveRequest(BaseModel):
 class HistoryUpdate(BaseModel):
     timestamp: float
 
+def parse_timestamp(t_str: str) -> float:
+    if not t_str: return 0
+    t_str = t_str.lower()
+    if 'h' not in t_str and 'm' not in t_str and 's' not in t_str:
+        try: return float(t_str)
+        except: return 0
+    # parse 1h2m30s
+    import re
+    h = re.search(r'(\d+)h', t_str)
+    m = re.search(r'(\d+)m', t_str)
+    s = re.search(r'(\d+)s', t_str)
+    total = 0
+    if h: total += int(h.group(1)) * 3600
+    if m: total += int(m.group(1)) * 60
+    if s: total += int(s.group(1))
+    return float(total)
+
 def extract_url_type(url: str):
     if not url.startswith('http://') and not url.startswith('https://'):
-        return None, None
+        return None, None, 0
     parsed = urllib.parse.urlparse(url)
+    qs = urllib.parse.parse_qs(parsed.query)
+    start_time = parse_timestamp(qs.get('t', [''])[0])
+
+    # YouTube Standard
+    if parsed.hostname in ['www.youtube.com', 'youtube.com', 'm.youtube.com']:
+        if parsed.path == '/watch':
+            if 'v' in qs:
+                return 'youtube', qs['v'][0], start_time
+    
+    # YouTube Short
+    if parsed.hostname == 'youtu.be':
+        vid = parsed.path.strip('/')
+        if vid:
+            return 'youtube', vid, start_time
+
     if not parsed.hostname or not parsed.hostname.endswith('twitch.tv'):
-        return None, None
+        return None, None, 0
         
     vod_match = re.search(r'/videos/(\d+)', parsed.path)
     if vod_match:
-        return 'vod', vod_match.group(1)
+        return 'vod', vod_match.group(1), start_time
         
-    # Example: https://www.twitch.tv/ibai
     channel_match = re.match(r'^/([a-zA-Z0-9_]{4,25})/?$', parsed.path)
     if channel_match:
-        return 'live', channel_match.group(1)
+        return 'live', channel_match.group(1), 0
         
-    return None, None
+    return None, None, 0
 
 async def check_live_status(channel: str):
     url = "https://gql.twitch.tv/gql"
@@ -87,13 +118,17 @@ async def get_playback_token(id_val: str, is_live: bool):
         "Content-Type": "application/json"
     }
     payload = {
-        "operationName": "PlaybackAccessToken",
-        "extensions": {
-            "persistedQuery": {
-                "version": 1,
-                "sha256Hash": "0828119ded1c13477966434e15800ff57ddacf13ba1911c129dc2200705b0712"
-            }
-        },
+        "operationName": "PlaybackAccessToken_Template",
+        "query": """query PlaybackAccessToken_Template($login: String!, $isLive: Boolean!, $vodID: ID!, $isVod: Boolean!, $playerType: String!) {
+          streamPlaybackAccessToken(channelName: $login, params: {platform: "web", playerBackend: "mediaplayer", playerType: $playerType}) @include(if: $isLive) {
+            value
+            signature
+          }
+          videoPlaybackAccessToken(id: $vodID, params: {platform: "web", playerBackend: "mediaplayer", playerType: $playerType}) @include(if: $isVod) {
+            value
+            signature
+          }
+        }""",
         "variables": {
             "isLive": is_live,
             "login": id_val if is_live else "",
@@ -117,11 +152,19 @@ async def get_playback_token(id_val: str, is_live: bool):
 @app.post("/api/resolve")
 async def resolve_url(req: ResolveRequest):
     console.log(f"[cyan]Resolving URL:[/cyan] {req.url}")
-    url_type, id_val = extract_url_type(req.url)
+    url_type, id_val, start_time = extract_url_type(req.url)
     
     if not url_type:
         console.log("[red]Invalid URL provided.[/red]")
-        return JSONResponse(status_code=400, content={"error": "Invalid Twitch URL."})
+        return JSONResponse(status_code=400, content={"error": "Invalid or unsupported video URL."})
+        
+    if url_type == 'youtube':
+        console.log(f"[green]Successfully resolved youtube {id_val}[/green]")
+        return {
+            "type": url_type,
+            "id_val": id_val,
+            "start_time": start_time
+        }
         
     if url_type == 'live':
         status = await check_live_status(id_val)
@@ -148,7 +191,8 @@ async def resolve_url(req: ResolveRequest):
         "type": url_type,
         "m3u8_url": f"/proxy?url={urllib.parse.quote(usher_url)}",
         "raw_url": usher_url,
-        "id_val": id_val
+        "id_val": id_val,
+        "start_time": start_time
     }
 
 @app.post("/api/history/{vod_id}")
