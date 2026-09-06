@@ -1,920 +1,1160 @@
+# Witch — Phase 4: YouTube Video Support
 
-# Witch — Phase 2: Twitch Live Playback
+Witch should:
 
-## 1. Phase Overview
-
-This specification defines **Phase 2** of the Witch project.
-
-Phase 1 has been completed successfully and provides functional Twitch VOD playback with:
-
-* Twitch VOD URL input.
-* Automatic VOD → HLS `.m3u8` resolution.
-* Custom HTML5/HLS video playback.
-* Configurable skip intervals.
-* Direct `HH:MM:SS` timestamp seeking.
-* Persistent skip interval settings using `localStorage`.
-* VOD-specific playback controls.
-
-**Phase 2 must add Twitch Live playback without breaking the existing VOD functionality.**
-
-The primary goal of this phase is deliberately narrow:
-
-> Allow a user to enter a Twitch channel URL, detect whether the channel is currently live, resolve its HLS `.m3u8` playlist, and play the live stream inside Witch's existing player.
-
-Live playback should behave as a true live stream.
-
-**Do not implement DVR, live seeking, rewind, timestamp navigation, or live playback history in this phase.**
-
----
-
-# 2. Scope
-
-### In scope
-
-* Twitch channel URL input.
-* Live-channel detection.
-* Twitch Live → HLS `.m3u8` resolution.
-* Playback of the live HLS stream inside Witch.
-* Clear `LIVE` state in the UI.
-* Live-specific player controls.
-* Displaying the resolved `.m3u8` URL for debugging/transparency.
-* Copying the `.m3u8` URL to the clipboard.
-* Appropriate error handling.
-* Security validation.
-* Automated tests for the new backend logic where practical.
-* Documentation of the live-resolution approach and limitations.
-
-### Out of scope
-
-Do NOT implement:
-
-* Live DVR.
-* Rewind.
-* Fast-forward.
-* Timestamp seeking for live streams.
-* Live playback history.
-* Recording.
-* Downloading the live stream.
-* Chat integration.
-* Stream metadata dashboards.
-* Follower/subscriber functionality.
-* Twitch account authentication unless the selected resolution mechanism strictly requires it.
-* Database storage.
-* User accounts.
-* Analytics.
-* Telemetry.
-* Cloud infrastructure.
-
-Keep the implementation small.
-
----
-
-# 3. Existing VOD Functionality Is Protected
-
-The VOD functionality from Phase 1 is considered stable.
-
-The Phase 2 implementation MUST NOT unnecessarily rewrite or replace working VOD code.
-
-Before modifying shared components:
-
-1. Inspect the existing VOD implementation.
-2. Understand its current architecture.
-3. Reuse existing abstractions where appropriate.
-4. Add live-specific behavior through clean extensions.
-5. Avoid breaking changes to VOD behavior.
-6. Run the existing VOD tests after implementing Live support.
-
-If a shared abstraction must be modified, preserve all existing VOD behavior.
-
----
-
-# 4. Supported Input Types
-
-Witch should now support two primary Twitch URL types.
-
-## VOD
-
-Example:
-
-```text
-https://www.twitch.tv/videos/2858768912
-```
-
-This must continue using the existing Phase 1 VOD flow.
-
-## Channel
-
-Example:
-
-```text
-https://www.twitch.tv/ibai
-```
-
-This should initiate the Phase 2 Live flow.
+1. Detect that the URL belongs to YouTube.
+2. Validate the URL.
+3. Extract the YouTube Video ID.
+4. Load the video using the official YouTube IFrame Player API.
+5. Display the video inside Witch's own UI.
+6. Allow Witch's custom controls to interact with the YouTube player.
+7. Support configurable skip intervals.
+8. Support direct timestamp navigation.
 
 Conceptually:
 
 ```text
-Twitch URL
-    │
-    ├── /videos/<id>
-    │       │
-    │       ▼
-    │      VOD
-    │       │
-    │       ▼
-    │  Existing VOD resolver
-    │
-    └── /<channel>
-            │
-            ▼
-          Channel
-            │
-            ▼
-        Is channel live?
-            │
-       ┌────┴────┐
-       │         │
-      YES        NO
-       │         │
-       ▼         ▼
-   Resolve      Clear
-    HLS        "Offline"
-       │
-       ▼
-    LIVE
+YouTube URL
+     │
+     ▼
+Platform Detection
+     │
+     ▼
+YouTube URL Parser
+     │
+     ▼
+Video ID
+     │
+     ▼
+YouTube IFrame Player API
+     │
+     ▼
+Official YouTube Player
+     │
+     ▼
+Witch Custom Controls
 ```
 
 ---
 
-# 5. Live Detection
+# 3. CRITICAL SCOPE RESTRICTION — NO YOUTUBE LIVE
 
-The application must determine whether the supplied Twitch channel is currently live.
-
-The implementation should investigate the **official Twitch API first** for determining live status.
-
-The agent must research the current Twitch API capabilities and determine the appropriate endpoint/mechanism for checking whether a channel is live.
-
-Do not infer live status by blindly attempting to fetch arbitrary URLs if a proper API-based mechanism is available.
-
-The implementation should distinguish at least:
+This phase supports:
 
 ```text
-LIVE
-OFFLINE
-ERROR
+YouTube Videos
 ```
 
-### Offline behavior
-
-If the channel exists but is not currently streaming, the UI should clearly communicate:
+This phase does NOT support:
 
 ```text
-This channel is currently offline.
+YouTube Live Streams
+YouTube Live Replay
+YouTube Premieres
+Live DVR
+Live Chat
+Live Seeking
+Live Stream Detection
 ```
 
-It must not attempt to initialize the HLS player with an unavailable live playlist.
+YouTube Live functionality is explicitly out of scope.
 
----
+The implementation must not attempt to resolve or play YouTube Live streams.
 
-# 6. Live HLS Resolution
-
-Once a channel has been confirmed as live, Witch must resolve the stream into a playable HLS `.m3u8` playlist.
-
-The user must NOT need to manually provide the `.m3u8`.
-
-Example input:
-
-```text
-https://www.twitch.tv/ibai
-```
-
-Expected conceptual flow:
-
-```text
-Channel URL
-    ↓
-Channel identification
-    ↓
-Live status check
-    ↓
-Twitch playback resolution
-    ↓
-HLS .m3u8
-    ↓
-Witch player
-```
-
----
-
-# 7. Mandatory Technical Research
-
-Before implementing the Live resolver, the coding agent MUST research the current Twitch playback architecture.
-
-Do not assume that the VOD resolver can simply be reused for Live.
-
-Investigate:
-
-1. How Twitch currently exposes live playback information.
-2. How the Twitch web player obtains the live HLS playlist.
-3. Whether the official Twitch API exposes the HLS playlist directly.
-4. Whether the official API can determine live status independently of playback resolution.
-5. Whether live playback requires:
-
-   * Client-ID.
-   * OAuth.
-   * access token.
-   * playback access token.
-   * GraphQL.
-   * another request mechanism.
-6. Whether the resulting HLS URL is temporary or signed.
-7. Required HTTP headers.
-8. CORS implications.
-9. Whether the HLS playlist can be consumed directly by the browser.
-10. Whether the resolver should run server-side.
-11. Whether the mechanism is documented, semi-documented, or internal.
-12. The stability implications of the chosen method.
-13. Relevant Twitch terms and technical restrictions.
-
-The agent must document the chosen approach and why it is appropriate for Witch.
-
----
-
-# 8. Live Resolver Architecture
-
-The live resolver should be isolated from the existing VOD resolver.
-
-Prefer an architecture conceptually similar to:
-
-```text
-TwitchResolver
-│
-├── VodResolver
-│
-└── LiveResolver
-       │
-       ├── Channel validation
-       ├── Live status
-       └── HLS resolution
-```
-
-The exact implementation is up to the agent.
-
-The important requirement is that Twitch-specific live resolution logic is not scattered throughout the UI or player code.
-
----
-
-# 9. HLS Source Exposure
-
-For Phase 2, Witch should expose the resolved HLS `.m3u8` URL in the UI.
-
-This is intentionally included because the application is also being used as a technical experiment for understanding Twitch playback.
+If the supplied YouTube content is detected as a live stream, Witch must reject it with a clear message.
 
 Example:
 
 ```text
-HLS Source
-
-https://usw21.playlist.ttvnw.net/v1/playlist/....m3u8
-
-[Copy]
+YouTube Live streams are not supported.
 ```
 
-### Requirements
+Do not attempt to partially support Live.
 
-* The URL should be displayed only after successful resolution.
-* It should be visually secondary to the video.
-* It should be possible to copy it to the clipboard.
-* Long URLs must not break the layout.
-* The UI should handle URLs that expire.
-* The application should not claim that the URL is permanent.
+Do not add experimental Live functionality.
 
-A small indication may be shown:
+Do not reuse the Twitch Live implementation for YouTube.
 
-```text
-HLS source may expire.
-```
+This phase is strictly:
 
-Do not persist the live `.m3u8` URL in `localStorage`.
+> **YouTube videos only.**
 
 ---
 
-# 10. Live Player Behavior
+# 4. Existing Functionality Is Protected
 
-When the source is a live stream, Witch must explicitly enter **Live Mode**.
+The existing Twitch functionality is considered working and must remain protected.
+
+This phase must NOT unnecessarily rewrite:
+
+* Twitch VOD resolution.
+* Twitch Live resolution.
+* Existing HLS playback.
+* Existing custom VOD controls.
+* Existing settings.
+* Existing application architecture.
+
+Before implementation:
+
+1. Inspect the existing Witch architecture.
+2. Understand how Twitch sources are currently detected.
+3. Identify reusable playback abstractions.
+4. Reuse existing custom controls where appropriate.
+5. Add YouTube support as a separate platform integration.
+6. Avoid breaking changes.
+
+All existing Twitch functionality must continue working after this phase.
+
+---
+
+# 5. Supported YouTube URL Types
+
+The implementation should support common YouTube video URL formats.
+
+## Standard URL
+
+```text
+https://www.youtube.com/watch?v=VIDEO_ID
+```
 
 Example:
 
 ```text
-🔴 LIVE
+https://www.youtube.com/watch?v=dQw4w9WgXcQ
 ```
 
-The player should use the same underlying HTML5/HLS playback technology as appropriate for VODs, but Live Mode must expose a different control set.
-
-### Live controls
-
-The player should provide only controls appropriate for live playback.
-
-At minimum:
-
-* Play.
-* Pause, if technically supported by the implementation.
-* Live indicator.
-* Volume.
-* Fullscreen.
-* Standard browser/player controls as appropriate.
-
-The exact control design may reuse existing player infrastructure.
-
 ---
 
-# 11. No Live Seeking
-
-This is an explicit Phase 2 requirement.
-
-The Live player MUST NOT expose:
-
-* Backward skip buttons.
-* Forward skip buttons.
-* Timestamp selector.
-* VOD-style seek bar.
-* "Go to timestamp" functionality.
-* Rewind controls.
-* Fast-forward controls.
-
-Do not attempt to emulate DVR behavior.
-
-The goal is simply:
-
-> Watch the current live stream.
-
----
-
-# 12. Live Edge Behavior
-
-The player should behave as a live player rather than as a VOD.
-
-The implementation should investigate how the selected HLS library handles live playlists and the live edge.
-
-The application should avoid intentionally drifting away from the current live position.
-
-If the player falls significantly behind the live edge due to buffering or another recoverable condition, the implementation may provide a simple:
+## Short URL
 
 ```text
-[Go Live]
+https://youtu.be/VIDEO_ID
 ```
-
-control.
-
-If implemented, `Go Live` must return playback to the current live edge.
-
-Do not implement manual DVR navigation.
-
----
-
-# 13. Live UI
-
-The UI should clearly distinguish Live Mode from VOD Mode.
 
 Example:
 
 ```text
-┌──────────────────────────────────────────────────┐
-│ Twitch URL                                       │
-│ [ https://www.twitch.tv/ibai ]          [Load]  │
-└──────────────────────────────────────────────────┘
-
-                    🔴 LIVE
-
-┌──────────────────────────────────────────────────┐
-│                                                  │
-│                    VIDEO                         │
-│                                                  │
-│                                                  │
-└──────────────────────────────────────────────────┘
-
-                 [ ▶ / ❚❚ ] [ 🔊 ] [ ⛶ ]
-
-HLS Source
-https://usw21.playlist.ttvnw.net/...
-                                      [Copy]
+https://youtu.be/dQw4w9WgXcQ
 ```
-
-The UI should NOT display VOD controls while in Live Mode.
 
 ---
 
-# 14. URL Validation
+## URLs With Additional Parameters
 
-The application must distinguish between:
+The implementation should correctly extract the Video ID from URLs containing additional parameters.
 
-### Valid VOD
-
-```text
-https://www.twitch.tv/videos/2858768912
-```
-
-### Valid channel
+Example:
 
 ```text
-https://www.twitch.tv/ibai
+https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=120
 ```
 
-### Invalid Twitch URL
+The additional parameters should not prevent video loading.
+
+---
+
+# 6. Unsupported URLs
+
+The application must reject invalid or unsupported URLs.
+
+Examples:
 
 ```text
-https://example.com/foo
+https://example.com/video
 ```
 
-### Arbitrary URL
+```text
+https://google.com
+```
 
 ```text
 http://localhost:8000
 ```
 
-Only valid Twitch URLs should enter the Twitch resolution workflow.
+```text
+https://youtube.com/
+```
+
+when no valid Video ID is present.
+
+The application should provide a clear error:
+
+```text
+Invalid or unsupported YouTube video URL.
+```
 
 ---
 
-# 15. Security Requirements
+# 7. YouTube Video ID Extraction
 
-## SSRF prevention
+Witch does not need a Python library to extract YouTube media.
 
-The live resolver must not become a generic URL-fetching proxy.
+The only information required from the user URL is the:
 
-Do NOT implement:
+```text
+Video ID
+```
+
+Example:
+
+```text
+https://www.youtube.com/watch?v=dQw4w9WgXcQ
+```
+
+Extract:
+
+```text
+dQw4w9WgXcQ
+```
+
+The Video ID extraction should be implemented using reliable URL parsing.
+
+Do not rely on fragile string splitting when proper URL parsing is available.
+
+The implementation should account for supported URL variations.
+
+Conceptually:
+
+```text
+YouTube URL
+      │
+      ▼
+URL Validation
+      │
+      ▼
+URL Parsing
+      │
+      ▼
+Video ID
+```
+
+---
+
+# 8. Official YouTube IFrame Player API
+
+The YouTube integration must use the official:
+
+```text
+YouTube IFrame Player API
+```
+
+The frontend should load and control the official YouTube player.
+
+Conceptually:
+
+```text
+Frontend
+    │
+    ▼
+Load YouTube IFrame Player API
+    │
+    ▼
+Create Player
+    │
+    ▼
+Provide Video ID
+    │
+    ▼
+YouTube Handles Playback
+```
+
+Witch must not manually handle:
+
+* Video quality selection.
+* Audio streams.
+* Video streams.
+* Adaptive streaming.
+* DASH manifests.
+* HLS manifests.
+* Signed media URLs.
+* Media segment downloading.
+
+Those responsibilities belong to YouTube's official player infrastructure.
+
+---
+
+# 9. No Media Extraction
+
+This is a strict requirement.
+
+Do NOT implement functionality intended to extract YouTube playback media URLs.
+
+Specifically, do not attempt to obtain:
+
+```text
+videoplayback URLs
+googlevideo URLs
+.m3u8 playlists
+.mpd manifests
+audio-only streams
+video-only streams
+signed playback URLs
+```
+
+Do not use third-party extraction libraries for this phase.
+
+Examples of functionality that must NOT be added include:
+
+```text
+yt-dlp
+pytube
+youtube-dl
+custom YouTube stream extraction
+browser network scraping
+DevTools request reproduction
+```
+
+The purpose of this phase is not to extract YouTube streams.
+
+The purpose is:
+
+> Use the official YouTube player and control it through Witch.
+
+---
+
+# 10. Player Architecture
+
+The application should maintain platform-specific playback implementations while exposing a common control model where practical.
+
+Conceptually:
+
+```text
+                     WITCH
+                       │
+               Platform Detector
+                       │
+         ┌─────────────┼─────────────┐
+         │             │             │
+      Twitch        Twitch       YouTube
+       VOD           Live         Video
+         │             │             │
+         ▼             ▼             ▼
+    HLS Player     HLS Player    YouTube API
+         │             │             │
+         └─────────────┼─────────────┘
+                       │
+                       ▼
+               Player Interface
+                       │
+          ┌────────────┼────────────┐
+          │            │            │
+         Play         Pause        State
+          │
+         Seek
+          │
+    Skip Intervals
+          │
+ Timestamp Navigation
+```
+
+The exact implementation may differ.
+
+The important requirement is to avoid coupling YouTube-specific code directly to Twitch-specific code.
+
+---
+
+# 11. Common Player Capabilities
+
+Where appropriate, the YouTube player integration should expose equivalent functionality to Witch's existing VOD controls.
+
+Conceptually:
+
+```text
+play()
+pause()
+seek(seconds)
+getCurrentTime()
+getDuration()
+```
+
+The existing application architecture should be inspected before introducing a new abstraction.
+
+Do not refactor working code solely for theoretical architectural purity.
+
+Prefer the smallest clean change that supports YouTube correctly.
+
+---
+
+# 12. Custom Playback Controls
+
+YouTube videos should support Witch's custom playback controls.
+
+At minimum:
+
+* Play.
+* Pause.
+* Configurable backward skip.
+* Configurable forward skip.
+* Current playback time.
+* Video duration where available.
+* Timestamp navigation.
+
+Example:
+
+```text
+[-60] [-30] [-10]   ▶ / ❚❚   [+10] [+30] [+60]
+```
+
+The existing configurable skip interval functionality should be reused where possible.
+
+Do not create separate skip settings exclusively for YouTube unless the existing architecture requires it.
+
+---
+
+# 13. Timestamp Navigation
+
+The existing Witch timestamp navigation concept should work with YouTube videos.
+
+Example:
+
+```text
+[01] : [23] : [45]  [Go]
+```
+
+The application should convert:
+
+```text
+HH:MM:SS
+```
+
+into seconds.
+
+Example:
+
+```text
+01:23:45
+```
+
+equals:
+
+```text
+5025 seconds
+```
+
+The YouTube player should then seek to that position using the official player API.
+
+The user should not need to drag the native YouTube seek bar to reach a precise timestamp.
+
+This is one of Witch's primary value-added features and should remain consistent across supported VOD platforms.
+
+---
+
+# 14. Skip Intervals
+
+Witch's configurable skip interval system should work with YouTube videos.
+
+Example:
+
+```text
+[-30 seconds]
+[+30 seconds]
+```
+
+Conceptually:
+
+```text
+currentTime - interval
+```
+
+and:
+
+```text
+currentTime + interval
+```
+
+The implementation must prevent invalid positions.
+
+For example:
+
+```text
+currentTime < 0
+```
+
+must clamp to:
+
+```text
+0
+```
+
+Forward seeking should not exceed the available duration.
+
+---
+
+# 15. Platform Detection
+
+Witch should determine which platform the user URL belongs to.
+
+Conceptually:
+
+```text
+User URL
+    │
+    ▼
+Platform Detector
+    │
+    ├── Twitch
+    │
+    ├── YouTube
+    │
+    └── Unsupported
+```
+
+YouTube detection should support the approved YouTube domains.
+
+Twitch behavior must remain unchanged.
+
+An unsupported platform should display a clear error.
+
+Example:
+
+```text
+Unsupported video platform.
+```
+
+---
+
+# 16. YouTube Video Validation
+
+Before initializing the YouTube player, validate the supplied URL and Video ID.
+
+The implementation should distinguish between:
+
+```text
+VALID
+INVALID
+UNSUPPORTED
+```
+
+Examples:
+
+### Valid
+
+```text
+https://www.youtube.com/watch?v=VIDEO_ID
+```
+
+### Valid
+
+```text
+https://youtu.be/VIDEO_ID
+```
+
+### Invalid
+
+```text
+https://example.com/video
+```
+
+### Invalid
+
+```text
+https://youtube.com/
+```
+
+### Unsupported
+
+```text
+YouTube Live URL/content
+```
+
+---
+
+# 17. YouTube Live Detection
+
+Because YouTube Live is explicitly unsupported, the implementation must not accidentally initialize a Live stream as a normal VOD.
+
+The implementation should research the appropriate official player/API state or metadata mechanisms necessary to determine whether the requested content is live.
+
+If the content is currently live, show:
+
+```text
+YouTube Live streams are not supported in Witch.
+```
+
+Do not:
+
+* Initialize Live playback.
+* Add Live controls.
+* Add DVR support.
+* Attempt HLS extraction.
+* Attempt DASH extraction.
+
+---
+
+# 18. UI Behavior
+
+The user experience should remain simple.
+
+Example:
+
+```text
+┌──────────────────────────────────────────────┐
+│ Video URL                                   │
+│                                              │
+│ [ YouTube or Twitch URL ]          [ Load ] │
+└──────────────────────────────────────────────┘
+
+
+┌──────────────────────────────────────────────┐
+│                                              │
+│                  VIDEO                       │
+│                                              │
+│          YouTube Player / Twitch             │
+│                                              │
+└──────────────────────────────────────────────┘
+
+
+[-60] [-30] [-10]   [ ▶ ]   [+10] [+30] [+60]
+
+
+Timestamp
+
+[ HH ] : [ MM ] : [ SS ] [ Go ]
+```
+
+The UI should make the integration feel like part of Witch rather than like a completely separate application.
+
+---
+
+# 19. YouTube Player Branding and UI Constraints
+
+The implementation must respect the capabilities and limitations of the official YouTube player.
+
+Do not attempt to:
+
+* Remove required YouTube branding through unsupported methods.
+* Modify the YouTube iframe internals.
+* Access the iframe DOM across origins.
+* Bypass YouTube player restrictions.
+* Reproduce YouTube's internal player behavior through scraping.
+
+Witch may provide its own surrounding controls where supported by the official API.
+
+---
+
+# 20. Security Requirements
+
+## URL Validation
+
+Never treat the user-supplied URL as an arbitrary backend fetch target.
+
+Do not implement:
 
 ```text
 GET /fetch?url=<arbitrary-url>
 ```
 
-where arbitrary user input is fetched by the backend.
+for YouTube URLs.
 
-The backend must first parse and validate the Twitch URL.
+The frontend should parse and validate supported URLs.
 
-Only the required Twitch domains/endpoints should be contacted.
+If backend validation is involved, it must also validate the domain and structure.
 
-Prevent access to:
+---
+
+## SSRF Prevention
+
+The YouTube integration must not create a generic proxy or arbitrary URL fetcher.
+
+Reject:
 
 * localhost.
-* `127.0.0.1`.
-* Private IPv4 ranges.
-* Private IPv6 ranges.
-* Link-local addresses.
+* Private IP addresses.
+* Internal domains.
+* Arbitrary domains.
 * Cloud metadata endpoints.
-* Internal hostnames.
-* Arbitrary user-controlled domains.
+
+The implementation should only accept supported YouTube URL formats.
 
 ---
 
-## Secrets
+## No Secrets
 
-If Twitch API credentials are required:
-
-* Store them in environment variables.
-* Never hardcode them.
-* Never expose them to the browser.
-* Never return them through the API.
-* Never commit them to Git.
-
-If required, provide:
-
-```text
-.env.example
-```
-
-with placeholder values only.
-
----
-
-## HLS URL Handling
-
-The resolved `.m3u8` URL may contain sensitive or temporary query parameters.
+The YouTube IFrame Player API integration should not introduce unnecessary secrets.
 
 Do not:
 
-* Log the full URL unnecessarily.
-* Persist it.
-* Include it in analytics.
-* Store it in the database.
-* Send it to unrelated services.
+* Hardcode credentials.
+* Add API keys unless required for a specific documented feature.
+* Expose server-side secrets to the browser.
 
-Developer logs should redact sensitive query parameters where appropriate.
+If any configuration becomes necessary, document it clearly.
 
 ---
 
-# 16. Local-First Requirements
+# 21. Local-First Requirements
 
-Witch remains a small local application.
+Witch remains a lightweight, local-first application.
 
 Do not introduce:
 
-* Database.
-* Authentication.
 * User accounts.
-* Cloud storage.
+* Database storage.
 * Analytics.
 * Telemetry.
-* Server-side session persistence.
+* Cloud storage.
+* Authentication systems.
 
-The only existing persistent application setting should remain the VOD skip interval configuration in `localStorage`.
-
-Live HLS URLs should not be persisted.
-
----
-
-# 17. Error Handling
-
-The Live flow must distinguish common failure states.
-
-## Invalid channel URL
-
-```text
-Invalid Twitch channel URL.
-```
-
-## Channel offline
-
-```text
-This Twitch channel is currently offline.
-```
-
-## Channel not found
-
-```text
-Twitch channel not found.
-```
-
-## Live resolution failure
-
-```text
-Unable to resolve the live stream.
-```
-
-## HLS playback failure
-
-```text
-The live stream was found, but playback could not be started.
-```
-
-## Stream ended
-
-If the stream goes offline while Witch is playing:
-
-```text
-The live stream has ended.
-```
-
-The UI should allow the user to attempt:
-
-```text
-[Reload]
-```
-
-rather than crashing.
+The YouTube player should integrate into the existing local application architecture.
 
 ---
 
-# 18. Live Stream Lifecycle
+# 22. Error Handling
 
-Live streams can end while the application is running.
+The implementation should handle at least the following states.
 
-The implementation must account for this.
-
-Expected behavior:
+## Invalid URL
 
 ```text
-LIVE
-  │
-  │ streamer ends stream
-  ▼
-HLS stops / playlist becomes unavailable
-  │
-  ▼
-Witch detects failure/end
-  │
-  ▼
-"Stream has ended"
+Invalid or unsupported YouTube video URL.
 ```
 
-Do not treat a normal stream ending as an application crash.
+## Video unavailable
 
-The user should be able to load the channel again to check whether it has started streaming again.
+```text
+This YouTube video is unavailable.
+```
+
+## Video restricted
+
+```text
+This video cannot be played in the embedded player.
+```
+
+## Playback initialization failure
+
+```text
+Unable to initialize the YouTube player.
+```
+
+## YouTube Live
+
+```text
+YouTube Live streams are not supported.
+```
+
+## Generic failure
+
+```text
+Unable to load the YouTube video.
+```
+
+The application must not crash if YouTube rejects or fails to load the video.
 
 ---
 
-# 19. Reuse Existing Player Infrastructure
+# 23. Existing Twitch Behavior
 
-If Phase 1 already has a reusable player abstraction, extend it.
+After adding YouTube support, the following must continue working.
 
-For example:
+## Twitch VOD
 
-```text
-Player
-│
-├── VOD mode
-│     ├── seek
-│     ├── skip
-│     └── timestamp
-│
-└── LIVE mode
-      ├── live state
-      ├── play
-      └── go live, if necessary
-```
+* Twitch URL input.
+* HLS resolution.
+* Playback.
+* Custom skip intervals.
+* Timestamp navigation.
 
-Do not duplicate the entire video-player implementation.
+## Twitch Live
 
-However, do not force VOD behavior onto Live playback.
+* Channel URL input.
+* Live detection.
+* HLS resolution.
+* Live playback.
+* Live-specific UI.
 
-Shared playback mechanics may be reused; navigation behavior must remain mode-specific.
+The YouTube integration must not interfere with either mode.
 
 ---
 
-# 20. Tests
+# 24. Testing
 
-Add tests for the new functionality where practical.
+Add tests where practical.
 
-## URL classification
+## Platform Detection
 
 Test:
 
 ```text
-/videos/<id> → VOD
-/<channel>   → CHANNEL
-invalid      → INVALID
+Twitch VOD URL → Twitch VOD
 ```
 
-## Live URL validation
+```text
+Twitch Channel URL → Twitch Channel
+```
+
+```text
+YouTube Video URL → YouTube Video
+```
+
+```text
+youtu.be URL → YouTube Video
+```
+
+```text
+Invalid URL → Invalid
+```
+
+---
+
+## YouTube URL Parsing
 
 Test:
 
-* Valid Twitch channel URL.
-* Invalid Twitch URL.
-* Non-Twitch URL.
-* Malformed URL.
-* Attempted localhost URL.
-* Attempted private/internal URL.
+* Standard YouTube URLs.
+* Short YouTube URLs.
+* URLs containing timestamps.
+* URLs containing additional parameters.
+* Missing Video ID.
+* Invalid domains.
+* Malformed URLs.
 
-## Live status
+---
 
-Mock the Twitch API/resolution layer and test:
+## Timestamp Conversion
+
+Test:
 
 ```text
-LIVE
-OFFLINE
-NOT FOUND
-ERROR
+00:00:00 → 0
 ```
 
-## Resolver
+```text
+00:00:30 → 30
+```
 
-Test the resolver's handling of:
+```text
+00:01:00 → 60
+```
 
-* Successful live resolution.
-* Resolution failure.
-* Missing playback information.
-* Expired/invalid playback information.
+```text
+01:00:00 → 3600
+```
 
-Do not make automated tests depend on a real Twitch stream being live.
-
-## Regression
-
-Run all existing Phase 1 VOD tests after implementing Phase 2.
-
-The existing VOD test suite must remain passing.
-
----
-
-# 21. Manual Verification
-
-The agent should perform a local end-to-end test using a currently live public Twitch channel when one is available.
-
-Verify:
-
-1. Open Witch.
-2. Enter a Twitch channel URL.
-3. Load the channel.
-4. Witch detects that it is live.
-5. Witch resolves the HLS source.
-6. The HLS URL appears in the UI.
-7. The HLS URL can be copied.
-8. The video starts playing.
-9. The UI clearly indicates `LIVE`.
-10. VOD-specific controls are not displayed.
-11. The stream remains at/near the live position.
-12. Existing VOD playback still works afterward.
-
-If no public channel is live during testing, document that limitation and run all available mocked/integration tests instead.
+```text
+01:23:45 → 5025
+```
 
 ---
 
-# 22. Documentation
+## Skip Controls
 
-Update `README.md` to include:
+Test:
 
-## Live support
+* Backward skip.
+* Forward skip.
+* Beginning-of-video clamping.
+* End-of-video behavior.
 
-Explain that Witch now supports:
+---
+
+## Regression Testing
+
+Run all existing tests.
+
+The following functionality must remain passing:
 
 ```text
 Twitch VOD
 Twitch Live
+Existing player controls
+Existing settings
 ```
 
-Explain the difference:
+---
+
+# 25. Manual Verification
+
+Perform manual testing with publicly available regular YouTube videos.
+
+Verify:
+
+1. Open Witch.
+2. Paste a standard YouTube video URL.
+3. Load the video.
+4. Verify the official YouTube player initializes.
+5. Play the video.
+6. Pause the video.
+7. Test backward skip.
+8. Test forward skip.
+9. Test timestamp navigation.
+10. Verify current playback time updates correctly.
+11. Test a `youtu.be` URL.
+12. Test an invalid URL.
+13. Test a YouTube Live URL/content if available and verify that it is rejected.
+14. Verify Twitch VOD still works.
+15. Verify Twitch Live still works.
+
+---
+
+# 26. Documentation
+
+Update `README.md`.
+
+Document the supported platforms.
+
+Example:
 
 ```text
-VOD
-- Seeking
-- Skip intervals
-- Timestamp selection
+Supported Platforms
 
-LIVE
-- Real-time playback
-- No rewind
-- No fast-forward
-- No timestamp selection
+✓ Twitch VOD
+✓ Twitch Live
+✓ YouTube Videos
+
+Not Supported
+
+✗ YouTube Live
+✗ YouTube Live DVR
+✗ YouTube Live Chat
+```
+
+Document that YouTube playback uses the official:
+
+```text
+YouTube IFrame Player API
+```
+
+Explain that Witch does not extract YouTube media streams.
+
+Example:
+
+```text
+Witch does not extract or download YouTube media streams.
+YouTube videos are played using the official YouTube player API.
 ```
 
 Also document:
 
-* How live resolution works at a high level.
-* Whether Twitch credentials are required.
-* Required environment variables.
-* Known limitations.
-* The fact that HLS URLs may expire.
-* That live playback depends on Twitch's current playback infrastructure.
-
-Do not document private credentials or sensitive tokens.
+* Supported YouTube URL formats.
+* Timestamp navigation.
+* Custom skip intervals.
+* Known embedded-player limitations.
 
 ---
 
-# 23. Definition of Done
+# 27. Implementation Workflow
 
-Phase 2 is complete when:
+The coding agent should follow this sequence.
 
-* [ ] A Twitch channel URL can be entered into Witch.
-* [ ] Witch correctly identifies it as a channel rather than a VOD.
-* [ ] Witch determines whether the channel is live.
-* [ ] Offline channels produce a clear offline message.
-* [ ] Live channels are resolved to a playable HLS source.
-* [ ] The HLS source is displayed in the UI.
-* [ ] The HLS source can be copied.
-* [ ] The live stream plays inside Witch's own player.
-* [ ] The UI clearly indicates `LIVE`.
-* [ ] VOD skip controls are not shown for Live.
-* [ ] VOD timestamp controls are not shown for Live.
-* [ ] No DVR functionality is implemented.
-* [ ] Live stream termination is handled gracefully.
-* [ ] Invalid URLs are rejected safely.
-* [ ] The backend cannot be trivially abused as an SSRF proxy.
-* [ ] Secrets remain server-side.
-* [ ] Existing VOD functionality continues to work.
-* [ ] Existing VOD tests pass.
-* [ ] New Live-related tests pass.
+## Phase 4.1 — Inspect Existing Architecture
+
+Understand:
+
+* Platform detection.
+* Twitch implementation.
+* Existing player controls.
+* Timestamp logic.
+* Skip interval logic.
+
+Do not modify code until the existing architecture is understood.
+
+---
+
+## Phase 4.2 — Research Official Integration
+
+Review the current official YouTube IFrame Player API documentation.
+
+Confirm:
+
+* Player initialization.
+* Loading videos by Video ID.
+* Play/pause methods.
+* Current time retrieval.
+* Duration retrieval.
+* Seeking.
+* Player states.
+* Error handling.
+* Embedded player limitations.
+
+Use the official integration approach.
+
+---
+
+## Phase 4.3 — Platform Detection
+
+Extend Witch's URL detection to identify YouTube.
+
+Preserve existing Twitch behavior.
+
+---
+
+## Phase 4.4 — URL Parsing
+
+Implement reliable YouTube Video ID extraction.
+
+Support approved URL formats.
+
+Reject unsupported URLs.
+
+---
+
+## Phase 4.5 — YouTube Player Integration
+
+Integrate the official YouTube IFrame Player API.
+
+Initialize the player using the extracted Video ID.
+
+Do not implement media extraction.
+
+---
+
+## Phase 4.6 — Custom Controls
+
+Connect Witch's existing controls to the YouTube player.
+
+Implement:
+
+* Play.
+* Pause.
+* Skip backward.
+* Skip forward.
+* Timestamp navigation.
+
+---
+
+## Phase 4.7 — Live Protection
+
+Ensure YouTube Live content is rejected.
+
+Do not implement Live support.
+
+---
+
+## Phase 4.8 — Error Handling
+
+Implement clear user-facing error states.
+
+---
+
+## Phase 4.9 — Testing
+
+Run:
+
+* New YouTube tests.
+* Existing Twitch tests.
+* Manual integration tests.
+
+---
+
+## Phase 4.10 — Documentation
+
+Update the README.
+
+Document supported and unsupported YouTube content.
+
+---
+
+# 28. Definition of Done
+
+Phase 4 is complete when:
+
+* [ ] Witch detects YouTube URLs.
+* [ ] Witch supports standard YouTube video URLs.
+* [ ] Witch supports `youtu.be` URLs.
+* [ ] Witch correctly extracts the Video ID.
+* [ ] The official YouTube IFrame Player API is used.
+* [ ] Regular YouTube videos play inside Witch.
+* [ ] Play works.
+* [ ] Pause works.
+* [ ] Custom backward skip works.
+* [ ] Custom forward skip works.
+* [ ] Timestamp navigation works.
+* [ ] Invalid URLs are rejected.
+* [ ] Unavailable videos are handled gracefully.
+* [ ] Embedded-player failures are handled gracefully.
+* [ ] YouTube Live streams are explicitly rejected.
+* [ ] No YouTube HLS extraction is implemented.
+* [ ] No DASH extraction is implemented.
+* [ ] No `videoplayback` extraction is implemented.
+* [ ] No media downloading functionality is added.
+* [ ] Twitch VOD functionality still works.
+* [ ] Twitch Live functionality still works.
+* [ ] Existing tests pass.
+* [ ] New tests pass.
 * [ ] README documentation is updated.
 
 ---
 
-# 24. Implementation Workflow
-
-The coding agent should follow this order.
-
-### Phase 2.1 — Inspect existing implementation
-
-Understand the completed Phase 1 architecture before changing anything.
-
-Identify:
-
-* URL handling.
-* VOD resolver.
-* HLS player.
-* API layer.
-* Frontend player controls.
-* Tests.
-
-Do not refactor working code unless necessary.
-
-### Phase 2.2 — Research Twitch Live
-
-Investigate the current official and technical Twitch playback mechanisms.
-
-Determine:
-
-* Live detection.
-* HLS resolution.
-* Authentication requirements.
-* CORS.
-* Temporary URL behavior.
-* Backend/frontend responsibilities.
-
-### Phase 2.3 — Architecture decision
-
-Document the selected Live resolution mechanism before implementing it.
-
-### Phase 2.4 — URL classification
-
-Add VOD vs channel URL classification while preserving existing VOD behavior.
-
-### Phase 2.5 — Live resolver
-
-Implement the smallest reliable Live resolver.
-
-### Phase 2.6 — Live player mode
-
-Extend the existing player to support a Live mode.
-
-### Phase 2.7 — Live UI
-
-Add:
-
-* Live indicator.
-* HLS source display.
-* Copy button.
-* Live-specific controls.
-
-### Phase 2.8 — Error handling
-
-Implement offline, unavailable, resolution failure, playback failure, and stream-ended states.
-
-### Phase 2.9 — Security review
-
-Verify URL validation and SSRF protections.
-
-### Phase 2.10 — Testing
-
-Run:
-
-* New Live tests.
-* Existing VOD tests.
-* Application locally.
-
-### Phase 2.11 — Documentation
-
-Update README with Live support and limitations.
-
----
-
-# 25. Important Agent Constraints
+# 29. Important Agent Constraints
 
 The coding agent MUST:
 
-1. Treat Phase 1 VOD functionality as working and protected.
-2. Research Twitch Live playback before implementing the resolver.
-3. Prefer official Twitch APIs where they are appropriate and sufficient.
-4. Keep Live resolution separate from VOD resolution.
-5. Keep the application local-first.
-6. Avoid introducing a database.
-7. Avoid authentication unless technically required.
-8. Avoid arbitrary URL fetching.
-9. Prevent SSRF.
-10. Keep credentials server-side.
-11. Never bypass Twitch access controls.
-12. Never implement downloading or recording as part of this phase.
-13. Never add DVR/rewind functionality.
-14. Never expose VOD-only controls during Live playback.
-15. Keep the implementation minimal.
-16. Preserve all Phase 1 behavior.
+1. Support YouTube videos only.
+2. NOT support YouTube Live.
+3. Use the official YouTube IFrame Player API.
+4. NOT extract `.m3u8` URLs.
+5. NOT extract `.mpd` manifests.
+6. NOT scrape `videoplayback` URLs.
+7. NOT use media extraction libraries.
+8. NOT implement downloading.
+9. NOT implement recording.
+10. NOT reverse engineer YouTube playback infrastructure.
+11. Reuse existing Witch controls where practical.
+12. Preserve all existing Twitch functionality.
+13. Keep the implementation lightweight.
+14. Keep the application local-first.
+15. Validate user-supplied URLs safely.
+16. Avoid unnecessary backend complexity.
 
 ---
 
-# 26. Expected Result
+# 30. Expected Result
 
-After Phase 2, Witch should conceptually support:
+After Phase 4, Witch should conceptually support:
 
 ```text
                          WITCH
                            │
-                    Twitch URL input
+                    Video URL Input
+                           │
+                 Platform Detection
+                           │
+          ┌────────────────┼────────────────┐
+          │                │                │
+          ▼                ▼                ▼
+      Twitch VOD       Twitch Live      YouTube Video
+          │                │                │
+          ▼                ▼                ▼
+      HLS Resolver      HLS Resolver    Extract Video ID
+          │                │                │
+          ▼                ▼                ▼
+       HLS Player       HLS Player    YouTube IFrame API
+          │                │                │
+          └────────────────┼────────────────┘
+                           │
+                           ▼
+                    Witch Controls
+                           │
+              ┌────────────┼────────────┐
+              │            │            │
+             Play         Pause        State
+                           │
+                    VOD Platforms
                            │
               ┌────────────┴────────────┐
               │                         │
-         /videos/<id>              /<channel>
-              │                         │
-              ▼                         ▼
-             VOD                    Is Live?
-              │                    ┌────┴────┐
-              │                   NO         YES
-              │                    │          │
-              │                 Offline       ▼
-              │                              HLS
-              ▼                               │
-        VOD HLS Player                        │
-              │                               │
-      ┌───────┼────────┐                      │
-      ▼       ▼        ▼                      ▼
-    Skip   Timestamp  Seek              LIVE Player
-                                           │
-                                      ┌────┴────┐
-                                      ▼         ▼
-                                    Video    HLS URL
-                                               │
-                                             [Copy]
+             Skip                 Timestamp Seek
 ```
 
-The key product distinction is:
+The supported content is:
 
-> **VOD is a navigable recording. Live is simply a live stream.**
+```text
+✓ Twitch VOD
+✓ Twitch Live
+✓ YouTube Videos
+```
 
-Phase 2 should add the latter without compromising the former.
+The unsupported content includes:
+
+```text
+✗ YouTube Live
+✗ YouTube Live DVR
+✗ YouTube Live Chat
+✗ YouTube media extraction
+✗ YouTube downloading
+```
+
+The guiding principle for this phase is:
+
+> **Use YouTube's official player for YouTube videos and let Witch provide the custom navigation experience around it.**

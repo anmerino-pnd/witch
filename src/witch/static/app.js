@@ -34,6 +34,13 @@ document.addEventListener('DOMContentLoaded', () => {
     let isLiveMode = false;
     let currentVodId = null;
     let hls = null;
+    let ytPlayer = null;
+    let ytPlayerReady = false;
+    let activePlatform = 'twitch'; // 'twitch' | 'youtube'
+    
+    window.onYouTubeIframeAPIReady = () => {
+        ytPlayerReady = true;
+    };
     
     // Skip intervals
     let skipIntervals = {
@@ -41,7 +48,6 @@ document.addEventListener('DOMContentLoaded', () => {
         forward: [5, 15, 30]
     };
     
-    // Load settings from localStorage
     try {
         const saved = localStorage.getItem('witchSkipSettings');
         if (saved) {
@@ -74,7 +80,6 @@ document.addEventListener('DOMContentLoaded', () => {
     
     updateSkipLabels();
     
-    // Save settings
     document.getElementById('save-settings-btn').addEventListener('click', () => {
         const sb3 = parseInt(document.getElementById('sb3-input').value) || 30;
         const sb2 = parseInt(document.getElementById('sb2-input').value) || 15;
@@ -93,7 +98,6 @@ document.addEventListener('DOMContentLoaded', () => {
         updateSkipLabels();
     });
     
-    // Clear Cache Button
     clearCacheBtn.addEventListener('click', async () => {
         if (confirm("Are you sure you want to clear your entire watch history?")) {
             try {
@@ -106,14 +110,49 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
     
-    // Skip buttons
+    const getDuration = () => {
+        if (activePlatform === 'youtube' && ytPlayer && ytPlayer.getDuration) return ytPlayer.getDuration() || 0;
+        return video.duration || 0;
+    };
+    
+    const getCurrentTime = () => {
+        if (activePlatform === 'youtube' && ytPlayer && ytPlayer.getCurrentTime) return ytPlayer.getCurrentTime() || 0;
+        return video.currentTime || 0;
+    };
+    
+    const seekTo = (time) => {
+        if (activePlatform === 'youtube' && ytPlayer && ytPlayer.seekTo) {
+            ytPlayer.seekTo(time, true);
+        } else {
+            video.currentTime = time;
+        }
+    };
+    
+    const playVideo = () => {
+        if (activePlatform === 'youtube' && ytPlayer && ytPlayer.playVideo) ytPlayer.playVideo();
+        else video.play();
+    };
+    
+    const pauseVideo = () => {
+        if (activePlatform === 'youtube' && ytPlayer && ytPlayer.pauseVideo) ytPlayer.pauseVideo();
+        else video.pause();
+    };
+    
+    const isPaused = () => {
+        if (activePlatform === 'youtube' && ytPlayer && ytPlayer.getPlayerState) {
+            return ytPlayer.getPlayerState() !== YT.PlayerState.PLAYING;
+        }
+        return video.paused;
+    };
+    
     const skip = (amount) => {
-        if (isLiveMode) return; // Prevent seeking in live mode
-        if (!video.duration) return;
-        let newTime = video.currentTime + amount;
+        if (isLiveMode) return;
+        const duration = getDuration();
+        if (!duration) return;
+        let newTime = getCurrentTime() + amount;
         if (newTime < 0) newTime = 0;
-        if (newTime > video.duration) newTime = video.duration;
-        video.currentTime = newTime;
+        if (newTime > duration) newTime = duration;
+        seekTo(newTime);
     };
     
     document.getElementById('skip-back-3').addEventListener('click', () => skip(-skipIntervals.backward[0]));
@@ -124,19 +163,15 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('skip-fwd-2').addEventListener('click', () => skip(skipIntervals.forward[1]));
     document.getElementById('skip-fwd-3').addEventListener('click', () => skip(skipIntervals.forward[2]));
     
-    // Play/Pause
     playPauseBtn.addEventListener('click', () => {
-        if (video.paused) {
-            video.play();
-        } else {
-            video.pause();
-        }
+        if (isPaused()) playVideo();
+        else pauseVideo();
     });
     
-    // Timestamp Go
     goBtn.addEventListener('click', () => {
         if (isLiveMode) return;
-        if (!video.duration) return;
+        const duration = getDuration();
+        if (!duration) return;
         const h = parseInt(tsH.value) || 0;
         const m = parseInt(tsM.value) || 0;
         const s = parseInt(tsS.value) || 0;
@@ -147,24 +182,22 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         let targetTime = (h * 3600) + (m * 60) + s;
-        if (targetTime > video.duration) {
+        if (targetTime > duration) {
             showError("Timestamp exceeds video duration.");
             return;
         }
         
-        video.currentTime = targetTime;
+        seekTo(targetTime);
         hideError();
     });
     
-    // Watch Again logic
     watchAgainBtn.addEventListener('click', () => {
         if (isLiveMode) return;
-        video.currentTime = 0;
-        video.play();
+        seekTo(0);
+        playVideo();
         watchAgainBtn.classList.add('hidden');
     });
     
-    // History Tracking API Call
     const saveHistory = async (timestamp) => {
         if (isLiveMode || !currentVodId) return;
         try {
@@ -178,27 +211,42 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
     
-    // History intervals and events
     setInterval(() => {
-        if (!isLiveMode && currentVodId && !video.paused && video.duration) {
-            saveHistory(video.currentTime);
+        if (!isLiveMode && currentVodId && !isPaused() && getDuration()) {
+            saveHistory(getCurrentTime());
         }
     }, 15000);
     
+    // YouTube time update emulation
+    setInterval(() => {
+        if (activePlatform === 'youtube' && ytPlayer && ytPlayer.getPlayerState) {
+            if (!isLiveMode) {
+                const cur = getCurrentTime();
+                const dur = getDuration();
+                currentTimeEl.textContent = formatTime(cur);
+                totalTimeEl.textContent = formatTime(dur);
+                
+                if (dur > 0 && cur >= dur - 1) {
+                    watchAgainBtn.classList.remove('hidden');
+                } else {
+                    watchAgainBtn.classList.add('hidden');
+                }
+            }
+        }
+    }, 500);
+    
     video.addEventListener('pause', () => {
-        if (!isLiveMode && currentVodId && video.duration) {
+        if (activePlatform === 'twitch' && !isLiveMode && currentVodId && video.duration) {
             saveHistory(video.currentTime);
         }
     });
     
     window.addEventListener('beforeunload', () => {
-        if (!isLiveMode && currentVodId && video.duration && !video.paused) {
-            // Synchronous fetch not recommended, but best effort
-            navigator.sendBeacon(`/api/history/${currentVodId}`, JSON.stringify({ timestamp: video.currentTime }));
+        if (!isLiveMode && currentVodId && getDuration() && !isPaused()) {
+            navigator.sendBeacon(`/api/history/${currentVodId}`, JSON.stringify({ timestamp: getCurrentTime() }));
         }
     });
     
-    // Time formatting
     const formatTime = (seconds) => {
         if (isNaN(seconds) || !isFinite(seconds)) return "00:00:00";
         const h = Math.floor(seconds / 3600);
@@ -208,13 +256,12 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     
     video.addEventListener('timeupdate', () => {
+        if (activePlatform !== 'twitch') return;
         if (isLiveMode) {
             currentTimeEl.textContent = "LIVE";
             totalTimeEl.textContent = "LIVE";
         } else {
             currentTimeEl.textContent = formatTime(video.currentTime);
-            
-            // Show watch again button if we're at the very end
             if (video.duration && video.currentTime >= video.duration - 1) {
                 watchAgainBtn.classList.remove('hidden');
             } else {
@@ -224,16 +271,13 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     
     video.addEventListener('loadedmetadata', () => {
+        if (activePlatform !== 'twitch') return;
         if (!isLiveMode) {
             totalTimeEl.textContent = formatTime(video.duration);
-            
-            // Apply saved history timestamp if present
             if (video.dataset.startTs) {
                 const startTs = parseFloat(video.dataset.startTs);
-                if (startTs > 0) {
-                    video.currentTime = startTs;
-                }
-                video.dataset.startTs = ''; // clear it
+                if (startTs > 0) video.currentTime = startTs;
+                video.dataset.startTs = '';
             }
         }
     });
@@ -274,7 +318,7 @@ document.addEventListener('DOMContentLoaded', () => {
             vodSkipFwd.classList.remove('hidden');
             vodTimestamp.classList.remove('hidden');
             vodSettings.classList.remove('hidden');
-            watchAgainBtn.classList.add('hidden'); // Only show when finished
+            watchAgainBtn.classList.add('hidden');
             currentTimeEl.textContent = "00:00:00";
             totalTimeEl.textContent = "00:00:00";
         }
@@ -283,7 +327,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadBtn.addEventListener('click', async () => {
         const url = urlInput.value.trim();
         if (!url) {
-            showError("Please enter a Twitch URL.");
+            showError("Please enter a Video URL.");
             return;
         }
         
@@ -301,66 +345,121 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await res.json();
             
             if (!res.ok) {
-                showError(data.error || "Unable to resolve this Twitch stream.");
+                showError(data.error || "Unable to resolve this stream.");
                 loadBtn.disabled = false;
                 loadBtn.textContent = "Load";
                 return;
             }
             
-            if (hls) {
-                hls.destroy();
-            }
+            const type = data.type; // 'live', 'vod', or 'youtube'
+            currentVodId = data.id_val;
+            let startTs = data.start_time || 0;
             
-            const type = data.type; // 'live' or 'vod'
-            const m3u8_url = data.m3u8_url;
-            
-            setLiveMode(type === 'live');
-            
-            if (type === 'live') {
-                currentVodId = null;
-                hlsUrlInput.value = data.raw_url || m3u8_url;
-            } else {
-                currentVodId = data.id_val;
+            // Fetch watch history if applicable
+            if (type !== 'live') {
                 try {
                     const histRes = await fetch(`/api/history/${currentVodId}`);
                     if (histRes.ok) {
                         const histData = await histRes.json();
-                        video.dataset.startTs = histData.timestamp || 0;
+                        if (histData.timestamp) {
+                            startTs = histData.timestamp;
+                        }
                     }
                 } catch (e) {
                     console.warn("Could not load history", e);
                 }
             }
-            
-            if (Hls.isSupported()) {
-                hls = new Hls({
-                    liveSyncDurationCount: 3,
-                    liveMaxLatencyDurationCount: 10,
-                });
-                hls.loadSource(m3u8_url);
-                hls.attachMedia(video);
-                hls.on(Hls.Events.MANIFEST_PARSED, () => {
-                    video.play();
-                });
-                hls.on(Hls.Events.ERROR, (event, data) => {
-                    if (data.fatal) {
+
+            if (type === 'youtube') {
+                activePlatform = 'youtube';
+                video.classList.add('hidden');
+                video.pause();
+                if (hls) { hls.destroy(); hls = null; }
+                const ytIframe = document.getElementById('youtube-player');
+                if (ytIframe) ytIframe.classList.remove('hidden');
+                
+                setLiveMode(false);
+                
+                const initYt = () => {
+                    if (ytPlayer) {
+                        ytPlayer.loadVideoById({videoId: data.id_val, startSeconds: startTs});
+                    } else {
+                        ytPlayer = new YT.Player('youtube-player', {
+                            videoId: data.id_val,
+                            playerVars: { 'autoplay': 1, 'start': Math.floor(startTs), 'playsinline': 1 },
+                            events: {
+                                'onReady': (e) => {
+                                    e.target.playVideo();
+                                },
+                                'onStateChange': (e) => {
+                                    const videoData = e.target.getVideoData();
+                                    if (videoData && videoData.isLive) {
+                                        showError("YouTube Live streams are not supported in Witch.");
+                                        e.target.stopVideo();
+                                    } else if (e.data === YT.PlayerState.PAUSED) {
+                                        saveHistory(getCurrentTime());
+                                    }
+                                }
+                            }
+                        });
+                    }
+                };
+                
+                if (ytPlayerReady) initYt();
+                else {
+                    const check = setInterval(() => {
+                        if (ytPlayerReady) { clearInterval(check); initYt(); }
+                    }, 100);
+                }
+                
+            } else {
+                activePlatform = 'twitch';
+                const ytIframe = document.getElementById('youtube-player');
+                if (ytIframe) ytIframe.classList.add('hidden');
+                if (ytPlayer && ytPlayer.pauseVideo) ytPlayer.pauseVideo();
+                video.classList.remove('hidden');
+                
+                setLiveMode(type === 'live');
+                const m3u8_url = data.m3u8_url;
+                
+                if (type === 'live') {
+                    hlsUrlInput.value = data.raw_url || m3u8_url;
+                } else {
+                    video.dataset.startTs = startTs;
+                }
+                
+                if (hls) { hls.destroy(); }
+                
+                if (Hls.isSupported()) {
+                    hls = new Hls({
+                        liveSyncDurationCount: 3,
+                        liveMaxLatencyDurationCount: 10,
+                    });
+                    hls.loadSource(m3u8_url);
+                    hls.attachMedia(video);
+                    hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                        video.play();
+                    });
+                    hls.on(Hls.Events.ERROR, (event, errData) => {
+                        if (errData.fatal) {
+                            showError("The stream was found, but playback could not be started or has ended.");
+                            loadBtn.disabled = false;
+                            loadBtn.textContent = "Reload";
+                        }
+                    });
+                } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                    video.src = m3u8_url;
+                    video.addEventListener('loadedmetadata', () => {
+                        video.play();
+                    });
+                    video.addEventListener('error', () => {
                         showError("The stream was found, but playback could not be started or has ended.");
                         loadBtn.disabled = false;
                         loadBtn.textContent = "Reload";
-                    }
-                });
-            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-                video.src = m3u8_url;
-                video.addEventListener('loadedmetadata', () => {
-                    video.play();
-                });
-                video.addEventListener('error', () => {
-                    showError("The stream was found, but playback could not be started or has ended.");
-                    loadBtn.disabled = false;
-                    loadBtn.textContent = "Reload";
-                });
-            } else {
-                showError("Your browser does not support HLS playback.");
+                    });
+                } else {
+                    showError("Your browser does not support HLS playback.");
+                }
             }
             
         } catch (e) {

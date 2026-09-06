@@ -6,11 +6,14 @@
 ![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?style=flat-square&logo=javascript&logoColor=black)
 ![uv](https://img.shields.io/badge/uv-000000?style=flat-square&logo=python&logoColor=white)
 
-Witch is a small, local-first web application that allows a user to enter a Twitch VOD or Live Channel URL and watch the stream inside Witch's own HTML5-based player.
+Witch is a small, local-first web application that allows a user to enter a Twitch VOD, Twitch Live Channel, or YouTube Video URL and watch the stream inside Witch's own HTML5-based player.
 
-## Supported Modes
+## Supported Platforms
 - **Twitch VOD:** Provides custom navigable HLS playback with customizable skip intervals and direct timestamp seeking.
 - **Twitch Live:** Provides a focused, real-time live player with no rewind/DVR controls to ensure playback remains at the live edge.
+- **YouTube Videos:** Supports standard YouTube videos (via the official IFrame Player API) featuring Witch's custom timestamp navigation and watch history cache. YouTube Live streams are strictly not supported.
+
+Note: Witch does not extract or download YouTube media streams. YouTube videos are strictly played using the official YouTube Player API.
 
 ## Requirements
 
