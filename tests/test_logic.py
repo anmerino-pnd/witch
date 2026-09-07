@@ -1,5 +1,5 @@
 import unittest
-from witch.server import extract_url_type, parse_timestamp
+from witch.utils.parsers import extract_url_type, parse_timestamp
 
 class TestURLValidation(unittest.TestCase):
     def test_vod_urls(self):
