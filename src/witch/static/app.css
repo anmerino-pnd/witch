@@ -35,12 +35,13 @@ body {
     flex-direction: row;
     gap: 2rem;
     width: 100%;
-    max-width: 1400px;
+    max-width: 1600px;
     align-items: flex-start;
+    justify-content: center;
 }
 
 .sidebar {
-    width: 280px;
+    width: 300px;
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
@@ -48,7 +49,8 @@ body {
 }
 
 .app-container {
-    flex-grow: 1;
+    width: 100%;
+    max-width: 1000px;
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
@@ -394,7 +396,7 @@ video, #youtube-player {
     text-align: center;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1000px) {
     .main-layout {
         flex-direction: column;
     }
@@ -402,6 +404,10 @@ video, #youtube-player {
     .sidebar {
         width: 100%;
         order: 2; /* Put history below the player on small screens */
+    }
+    
+    .right-spacer {
+        display: none;
     }
     
     .app-container {
