@@ -22,8 +22,8 @@ body {
     color: var(--text-color);
     min-height: 100vh;
     display: flex;
-    justify-content: center;
-    align-items: flex-start;
+    flex-direction: column;
+    align-items: center;
     padding: 2rem;
     background-image: 
         radial-gradient(circle at 15% 50%, rgba(145, 70, 255, 0.08) 0%, transparent 50%),
@@ -32,13 +32,15 @@ body {
 
 .main-layout {
     display: flex;
+    flex-direction: row;
     gap: 2rem;
     width: 100%;
     max-width: 1400px;
+    align-items: flex-start;
 }
 
 .sidebar {
-    width: 320px;
+    width: 280px;
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
@@ -53,12 +55,14 @@ body {
     min-width: 0;
 }
 
-header {
-    text-align: left;
-    margin-bottom: 0;
+.app-header {
+    text-align: center;
+    margin-bottom: 2rem;
+    width: 100%;
+    max-width: 1400px;
 }
 
-header h1 {
+.app-header h1 {
     font-size: 2.5rem;
     font-weight: 600;
     color: var(--primary-color);
@@ -66,7 +70,7 @@ header h1 {
     letter-spacing: -1px;
 }
 
-header p {
+.app-header p {
     color: var(--text-muted);
     margin-top: 0.5rem;
 }
@@ -390,18 +394,18 @@ video, #youtube-player {
     text-align: center;
 }
 
-@media (max-width: 1024px) {
+@media (max-width: 900px) {
     .main-layout {
         flex-direction: column;
     }
     
     .sidebar {
         width: 100%;
+        order: 2; /* Put history below the player on small screens */
     }
     
-    header {
-        text-align: center;
-        margin-bottom: 1rem;
+    .app-container {
+        order: 1;
     }
 }
 
