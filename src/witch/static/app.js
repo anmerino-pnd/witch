@@ -33,6 +33,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     let isLiveMode = false;
     let currentVodId = null;
+    let currentVideoTitle = null;
     let hls = null;
     let ytPlayer = null;
     let ytPlayerReady = false;
@@ -40,6 +41,14 @@ document.addEventListener('DOMContentLoaded', () => {
     
     window.onYouTubeIframeAPIReady = () => {
         ytPlayerReady = true;
+    };
+    
+    const formatTime = (seconds) => {
+        if (isNaN(seconds) || !isFinite(seconds)) return "00:00:00";
+        const h = Math.floor(seconds / 3600);
+        const m = Math.floor((seconds % 3600) / 60);
+        const s = Math.floor(seconds % 60);
+        return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
     };
     
     // Skip intervals
@@ -98,11 +107,63 @@ document.addEventListener('DOMContentLoaded', () => {
         updateSkipLabels();
     });
     
+    const historyList = document.getElementById('watch-history-list');
+    
+    const loadHistoryList = async () => {
+        try {
+            const res = await fetch('/api/history');
+            const data = await res.json();
+            historyList.innerHTML = '';
+            
+            const entries = Object.entries(data);
+            if (entries.length === 0) {
+                historyList.innerHTML = '<li class="history-item"><span class="history-meta">No recent videos</span></li>';
+                return;
+            }
+            
+            entries.reverse().forEach(([id, info]) => {
+                const li = document.createElement('li');
+                li.className = 'history-item ' + (info.type || 'vod');
+                
+                let titleHtml = info.title || id;
+                let platform = info.type === 'youtube' ? 'YouTube' : 'Twitch VOD';
+                let timeStr = formatTime(info.timestamp);
+                
+                li.innerHTML = `
+                    <div style="display: flex; flex-direction: column;">
+                        <span class="history-title" title="${titleHtml}">${titleHtml}</span>
+                        <span class="history-meta">${platform} &bull; Resumes at ${timeStr}</span>
+                    </div>
+                    <button class="history-play-btn" title="Play">▶</button>
+                `;
+                
+                li.addEventListener('click', () => {
+                    let url = '';
+                    if (info.type === 'youtube') {
+                        url = `https://www.youtube.com/watch?v=${id}`;
+                    } else {
+                        url = `https://www.twitch.tv/videos/${id}`;
+                    }
+                    urlInput.value = url;
+                    loadBtn.click();
+                });
+                
+                historyList.appendChild(li);
+            });
+        } catch (e) {
+            console.warn("Failed to load history list", e);
+        }
+    };
+    
+    // Initial load
+    loadHistoryList();
+
     clearCacheBtn.addEventListener('click', async () => {
         if (confirm("Are you sure you want to clear your entire watch history?")) {
             try {
                 await fetch('/api/history', { method: 'DELETE' });
                 alert("Watch history cleared successfully.");
+                loadHistoryList();
             } catch (e) {
                 console.error("Failed to clear history", e);
                 alert("Failed to clear watch history.");
@@ -200,11 +261,26 @@ document.addEventListener('DOMContentLoaded', () => {
     
     const saveHistory = async (timestamp) => {
         if (isLiveMode || !currentVodId) return;
+        
+        let payload = { timestamp, type: activePlatform };
+        
+        // Dynamic YouTube Title Fetching on save, if it's not set
+        if (activePlatform === 'youtube' && !currentVideoTitle && ytPlayer && ytPlayer.getVideoData) {
+            const ytData = ytPlayer.getVideoData();
+            if (ytData && ytData.title) {
+                currentVideoTitle = ytData.title;
+            }
+        }
+        
+        if (currentVideoTitle) {
+            payload.title = currentVideoTitle;
+        }
+
         try {
             await fetch(`/api/history/${currentVodId}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ timestamp })
+                body: JSON.stringify(payload)
             });
         } catch (e) {
             console.warn("Failed to save watch history", e);
@@ -247,13 +323,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
     
-    const formatTime = (seconds) => {
-        if (isNaN(seconds) || !isFinite(seconds)) return "00:00:00";
-        const h = Math.floor(seconds / 3600);
-        const m = Math.floor((seconds % 3600) / 60);
-        const s = Math.floor(seconds % 60);
-        return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-    };
+
     
     video.addEventListener('timeupdate', () => {
         if (activePlatform !== 'twitch') return;
@@ -353,6 +423,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             const type = data.type; // 'live', 'vod', or 'youtube'
             currentVodId = data.id_val;
+            currentVideoTitle = data.title || null;
             let startTs = data.start_time || 0;
             
             // Fetch watch history if applicable

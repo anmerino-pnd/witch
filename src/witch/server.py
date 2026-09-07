@@ -35,8 +35,11 @@ def save_history(history):
 class ResolveRequest(BaseModel):
     url: str
 
+from typing import Optional
 class HistoryUpdate(BaseModel):
     timestamp: float
+    title: Optional[str] = None
+    type: Optional[str] = None
 
 def parse_timestamp(t_str: str) -> float:
     if not t_str: return 0
@@ -128,6 +131,14 @@ async def get_playback_token(id_val: str, is_live: bool):
             value
             signature
           }
+          video(id: $vodID) @include(if: $isVod) {
+            title
+          }
+          user(login: $login) @include(if: $isLive) {
+            stream {
+              title
+            }
+          }
         }""",
         "variables": {
             "isLive": is_live,
@@ -144,10 +155,15 @@ async def get_playback_token(id_val: str, is_live: bool):
             response.raise_for_status()
             data = response.json()
             token_data = data['data']['streamPlaybackAccessToken'] if is_live else data['data']['videoPlaybackAccessToken']
-            return token_data['value'], token_data['signature']
+            title = None
+            if is_live and data['data'].get('user') and data['data']['user'].get('stream'):
+                title = data['data']['user']['stream'].get('title')
+            elif not is_live and data['data'].get('video'):
+                title = data['data']['video'].get('title')
+            return token_data['value'], token_data['signature'], title
         except Exception as e:
             console.log(f"[red]Error fetching token: {e}[/red]")
-            return None, None
+            return None, None, None
 
 @app.post("/api/resolve")
 async def resolve_url(req: ResolveRequest):
@@ -175,7 +191,7 @@ async def resolve_url(req: ResolveRequest):
         if status == 'error':
             return JSONResponse(status_code=500, content={"error": "Error checking live status."})
             
-    token, sig = await get_playback_token(id_val, is_live=(url_type == 'live'))
+    token, sig, title = await get_playback_token(id_val, is_live=(url_type == 'live'))
     if not token or not sig:
         console.log(f"[red]Failed to get playback token for {url_type} {id_val}[/red]")
         return JSONResponse(status_code=404, content={"error": "Unable to resolve this Twitch stream. It may be unavailable or restricted."})
@@ -192,20 +208,44 @@ async def resolve_url(req: ResolveRequest):
         "m3u8_url": f"/proxy?url={urllib.parse.quote(usher_url)}",
         "raw_url": usher_url,
         "id_val": id_val,
-        "start_time": start_time
+        "start_time": start_time,
+        "title": title
     }
 
 @app.post("/api/history/{vod_id}")
 async def update_history(vod_id: str, req: HistoryUpdate):
     history = load_history()
-    history[vod_id] = req.timestamp
+    # Remove to re-insert at the end (MRU)
+    entry = history.pop(vod_id, {})
+    if isinstance(entry, (int, float)):
+        entry = {"timestamp": float(entry)}
+        
+    entry["timestamp"] = req.timestamp
+    if req.title:
+        entry["title"] = req.title
+    if req.type:
+        entry["type"] = req.type
+        
+    history[vod_id] = entry
     save_history(history)
     return {"success": True}
+
+@app.get("/api/history")
+async def fetch_all_history():
+    history = load_history()
+    # Normalize old float entries for frontend
+    for k, v in history.items():
+        if isinstance(v, (int, float)):
+            history[k] = {"timestamp": float(v), "title": "Unknown", "type": "vod"}
+    return history
 
 @app.get("/api/history/{vod_id}")
 async def fetch_history(vod_id: str):
     history = load_history()
-    return {"timestamp": history.get(vod_id, 0)}
+    entry = history.get(vod_id, {})
+    if isinstance(entry, (int, float)):
+        return {"timestamp": float(entry)}
+    return {"timestamp": entry.get("timestamp", 0), "title": entry.get("title")}
 
 @app.delete("/api/history")
 async def clear_history():
