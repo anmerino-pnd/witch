@@ -35,7 +35,7 @@ body {
     flex-direction: row;
     gap: 2rem;
     width: 100%;
-    max-width: 1600px;
+    max-width: 2200px; /* even wider container to let app-container expand */
     align-items: flex-start;
     justify-content: center;
 }
@@ -50,7 +50,7 @@ body {
 
 .app-container {
     width: 100%;
-    max-width: 1200px;
+    max-width: 1400px;
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
@@ -66,11 +66,13 @@ body.theater-mode .main-layout {
 
 body.theater-mode .app-container {
     max-width: 100%;
+    order: 1;
 }
 
 body.theater-mode .sidebar {
     width: 100%;
-    max-width: 1200px; /* match expanded app container */
+    max-width: 1400px; /* match expanded app container */
+    order: 2;
 }
 
 body.theater-mode .right-spacer {
@@ -357,8 +359,21 @@ video, #youtube-player {
     background: rgba(255,255,255,0.1);
 }
 
+.gold-btn {
+    color: #FFD700;
+    border-color: rgba(255, 215, 0, 0.4);
+    background: rgba(255, 215, 0, 0.05);
+}
+
+.gold-btn:hover {
+    background: rgba(255, 215, 0, 0.15);
+}
+
 .play-btn {
-    padding: 0.75rem 2rem;
+    padding: 0.5rem 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
 }
 
 .timestamp-selector {
