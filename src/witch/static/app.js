@@ -109,6 +109,15 @@ document.addEventListener('DOMContentLoaded', () => {
     
     const historyList = document.getElementById('watch-history-list');
     
+    const timeAgo = (unixTs) => {
+        if (!unixTs || unixTs === 0) return "a while ago";
+        const diff = (Date.now() / 1000) - unixTs;
+        if (diff < 60) return "Just now";
+        if (diff < 3600) return `${Math.floor(diff / 60)} mins ago`;
+        if (diff < 86400) return `${Math.floor(diff / 3600)} hours ago`;
+        return `${Math.floor(diff / 86400)} days ago`;
+    };
+
     const loadHistoryList = async () => {
         try {
             const res = await fetch('/api/history');
@@ -121,18 +130,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             
-            entries.reverse().forEach(([id, info]) => {
+            entries.sort((a, b) => (b[1].last_watched || 0) - (a[1].last_watched || 0));
+            
+            entries.forEach(([id, info]) => {
                 const li = document.createElement('li');
                 li.className = 'history-item ' + (info.type || 'vod');
                 
                 let titleHtml = info.title || id;
                 let platform = info.type === 'youtube' ? 'YouTube' : 'Twitch VOD';
                 let timeStr = formatTime(info.timestamp);
+                let lastWatchedStr = timeAgo(info.last_watched);
                 
                 li.innerHTML = `
                     <div style="display: flex; flex-direction: column;">
                         <span class="history-title" title="${titleHtml}">${titleHtml}</span>
-                        <span class="history-meta">${platform} &bull; Resumes at ${timeStr}</span>
+                        <span class="history-meta">${platform} &bull; Resumes at ${timeStr} &bull; Watched ${lastWatchedStr}</span>
                     </div>
                     <button class="history-play-btn" title="Play">▶</button>
                 `;
@@ -157,6 +169,48 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Initial load
     loadHistoryList();
+
+    const theaterBtn = document.getElementById('theater-btn');
+    if (theaterBtn) {
+        theaterBtn.addEventListener('click', () => {
+            document.body.classList.toggle('theater-mode');
+            if (document.body.classList.contains('theater-mode')) {
+                theaterBtn.textContent = 'Exit Theater';
+                // Trigger resize for player if needed
+                window.dispatchEvent(new Event('resize'));
+            } else {
+                theaterBtn.textContent = 'Theater Mode';
+                window.dispatchEvent(new Event('resize'));
+            }
+        });
+    }
+
+    document.addEventListener('keydown', (e) => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+        if (e.key === 'ArrowLeft') {
+            document.getElementById('skip-back-2').click();
+            e.preventDefault();
+        } else if (e.key === 'ArrowRight') {
+            document.getElementById('skip-fwd-2').click();
+            e.preventDefault();
+        } else if (e.key === ' ' || e.code === 'Space') {
+            playPauseBtn.click();
+            e.preventDefault();
+        } else if (e.key.toLowerCase() === 'f') {
+            const playerWrapper = document.querySelector('.player-wrapper');
+            if (!document.fullscreenElement) {
+                if (playerWrapper.requestFullscreen) {
+                    playerWrapper.requestFullscreen();
+                }
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                }
+            }
+            e.preventDefault();
+        }
+    });
 
     clearCacheBtn.addEventListener('click', async () => {
         if (confirm("Are you sure you want to clear your entire watch history?")) {

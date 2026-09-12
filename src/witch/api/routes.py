@@ -10,6 +10,8 @@ from witch.utils.parsers import extract_url_type, rewrite_m3u8
 from witch.data.storage import load_history, save_history
 from witch.services.twitch import check_live_status, get_playback_token
 
+import time
+
 router = APIRouter()
 console = Console()
 
@@ -74,6 +76,7 @@ async def update_history(vod_id: str, req: HistoryUpdate):
         entry = {"timestamp": float(entry)}
         
     entry["timestamp"] = req.timestamp
+    entry["last_watched"] = time.time()
     if req.title:
         entry["title"] = req.title
     if req.type:
@@ -88,7 +91,9 @@ async def fetch_all_history():
     history = load_history()
     for k, v in history.items():
         if isinstance(v, (int, float)):
-            history[k] = {"timestamp": float(v), "title": "Unknown", "type": "vod"}
+            history[k] = {"timestamp": float(v), "title": "Unknown", "type": "vod", "last_watched": 0}
+        elif "last_watched" not in history[k]:
+            history[k]["last_watched"] = 0
     return history
 
 @router.get("/api/history/{vod_id}")
