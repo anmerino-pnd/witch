@@ -208,6 +208,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     document.exitFullscreen();
                 }
             }
+        } else if (e.key.toLowerCase() === 't') {
+            if (theaterBtn) theaterBtn.click();
             e.preventDefault();
         }
     });
