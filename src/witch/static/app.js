@@ -171,33 +171,38 @@ document.addEventListener('DOMContentLoaded', () => {
     loadHistoryList();
 
     const theaterBtn = document.getElementById('theater-btn');
+    const theaterBtnText = document.getElementById('theater-btn-text');
     if (theaterBtn) {
         theaterBtn.addEventListener('click', () => {
             document.body.classList.toggle('theater-mode');
             if (document.body.classList.contains('theater-mode')) {
-                theaterBtn.textContent = 'Exit Theater';
-                // Trigger resize for player if needed
+                if (theaterBtnText) theaterBtnText.textContent = 'Exit Theater';
                 window.dispatchEvent(new Event('resize'));
             } else {
-                theaterBtn.textContent = 'Theater Mode';
+                if (theaterBtnText) theaterBtnText.textContent = 'Theater Mode';
                 window.dispatchEvent(new Event('resize'));
             }
         });
     }
 
-    document.addEventListener('keydown', (e) => {
+    // Use capturing phase to intercept keys before native video controls handle them
+    window.addEventListener('keydown', (e) => {
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+        if (e.repeat) return; // Prevent hold-down bugs (like rapid play/pause)
 
         if (e.key === 'ArrowLeft') {
+            e.preventDefault();
             document.getElementById('skip-back-2').click();
-            e.preventDefault();
         } else if (e.key === 'ArrowRight') {
+            e.preventDefault();
             document.getElementById('skip-fwd-2').click();
-            e.preventDefault();
         } else if (e.key === ' ' || e.code === 'Space') {
-            playPauseBtn.click();
             e.preventDefault();
+            // Directly toggle play/pause instead of clicking button to avoid focus bugs
+            if (isPaused()) playVideo();
+            else pauseVideo();
         } else if (e.key.toLowerCase() === 'f') {
+            e.preventDefault();
             const playerWrapper = document.querySelector('.player-wrapper');
             if (!document.fullscreenElement) {
                 if (playerWrapper.requestFullscreen) {
@@ -209,10 +214,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
         } else if (e.key.toLowerCase() === 't') {
-            if (theaterBtn) theaterBtn.click();
             e.preventDefault();
+            if (theaterBtn) theaterBtn.click();
         }
-    });
+    }, true);
 
     clearCacheBtn.addEventListener('click', async () => {
         if (confirm("Are you sure you want to clear your entire watch history?")) {
