@@ -11,7 +11,7 @@ async def check_live_status(channel: str):
         "Content-Type": "application/json"
     }
     payload = {
-        "query": 'query{user(login:"' + channel + '"){stream{id}}}'
+        "query": 'query{user(login:"' + channel + '"){stream{id archiveVideo{id}}}}'
     }
     async with httpx.AsyncClient() as client:
         try:
@@ -19,11 +19,13 @@ async def check_live_status(channel: str):
             response.raise_for_status()
             data = response.json()
             if data['data']['user'] and data['data']['user']['stream']:
-                return 'live'
-            return 'offline'
+                stream = data['data']['user']['stream']
+                archive_id = stream.get('archiveVideo', {}).get('id') if stream.get('archiveVideo') else None
+                return 'live', archive_id
+            return 'offline', None
         except Exception as e:
             console.log(f"[red]Error checking live status: {e}[/red]")
-            return 'error'
+            return 'error', None
 
 async def get_playback_token(id_val: str, is_live: bool):
     url = "https://gql.twitch.tv/gql"

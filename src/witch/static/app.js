@@ -430,8 +430,9 @@ document.addEventListener('DOMContentLoaded', () => {
         errorMsg.classList.add('hidden');
     };
     
-    const setLiveMode = (isLive) => {
+    const setLiveMode = (isLive, archiveId = null) => {
         isLiveMode = isLive;
+        const dvrBtn = document.getElementById('dvr-btn');
         if (isLive) {
             liveIndicator.classList.remove('hidden');
             hlsUrlContainer.classList.remove('hidden');
@@ -442,6 +443,15 @@ document.addEventListener('DOMContentLoaded', () => {
             watchAgainBtn.classList.add('hidden');
             currentTimeEl.textContent = "LIVE";
             totalTimeEl.textContent = "LIVE";
+            
+            if (dvrBtn) {
+                if (archiveId) {
+                    dvrBtn.dataset.archiveId = archiveId;
+                    dvrBtn.classList.remove('hidden');
+                } else {
+                    dvrBtn.classList.add('hidden');
+                }
+            }
         } else {
             liveIndicator.classList.add('hidden');
             hlsUrlContainer.classList.add('hidden');
@@ -452,6 +462,7 @@ document.addEventListener('DOMContentLoaded', () => {
             watchAgainBtn.classList.add('hidden');
             currentTimeEl.textContent = "00:00:00";
             totalTimeEl.textContent = "00:00:00";
+            if (dvrBtn) dvrBtn.classList.add('hidden');
         }
     };
     
@@ -551,7 +562,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (ytPlayer && ytPlayer.pauseVideo) ytPlayer.pauseVideo();
                 video.classList.remove('hidden');
                 
-                setLiveMode(type === 'live');
+                setLiveMode(type === 'live', data.archive_id);
                 const m3u8_url = data.m3u8_url;
                 
                 if (type === 'live') {
@@ -602,4 +613,14 @@ document.addEventListener('DOMContentLoaded', () => {
         loadBtn.disabled = false;
         loadBtn.textContent = "Load";
     });
+
+    const dvrBtn = document.getElementById('dvr-btn');
+    if (dvrBtn) {
+        dvrBtn.addEventListener('click', () => {
+            if (dvrBtn.dataset.archiveId) {
+                urlInput.value = `https://www.twitch.tv/videos/${dvrBtn.dataset.archiveId}`;
+                loadBtn.click();
+            }
+        });
+    }
 });

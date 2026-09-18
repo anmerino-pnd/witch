@@ -41,7 +41,7 @@ async def resolve_url(req: ResolveRequest):
         }
         
     if url_type == 'live':
-        status = await check_live_status(id_val)
+        status, archive_id = await check_live_status(id_val)
         if status == 'offline':
             return JSONResponse(status_code=404, content={"error": "Channel is currently offline."})
         if status == 'error':
@@ -59,7 +59,7 @@ async def resolve_url(req: ResolveRequest):
         
     console.log(f"[green]Successfully resolved {url_type} {id_val}[/green]")
     
-    return {
+    response_data = {
         "type": url_type,
         "m3u8_url": f"/proxy?url={urllib.parse.quote(usher_url)}",
         "raw_url": usher_url,
@@ -67,6 +67,11 @@ async def resolve_url(req: ResolveRequest):
         "start_time": start_time,
         "title": title
     }
+    
+    if url_type == 'live' and archive_id:
+        response_data['archive_id'] = archive_id
+        
+    return response_data
 
 @router.post("/api/history/{vod_id}")
 async def update_history(vod_id: str, req: HistoryUpdate):
